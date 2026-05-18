@@ -22,7 +22,7 @@ venv/
 env/
 ENV/
 .venv/
-.dairysync_env/
+.syncvenv/
 
 
 # ===============================

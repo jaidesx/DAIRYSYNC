@@ -11,6 +11,22 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+DEBUG = os.getenv("DEBUG") == "True"
+
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME")
+AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+ALERT_PHONE_NUMBER = os.getenv("ALERT_PHONE_NUMBER")
+ALERT_EMAIL = os.getenv("ALERT_EMAIL")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -102,22 +118,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-import os
 
-# Email alerts
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "ssalijamal697@gmail.com"
-EMAIL_HOST_PASSWORD = "@jamil12"
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-# SMS alerts - Africa's Talking
-AFRICASTALKING_USERNAME = "sandbox"
-AFRICASTALKING_API_KEY = "your_api_keyatsk_94f900f01296eed8ec0b2874887a9a65d380ccf0bcb57660693399dcaab00b593b388f79"
-ALERT_PHONE_NUMBER = "+256751945243"
-ALERT_EMAIL = "ssalijamal697@gmail.com"
+
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"

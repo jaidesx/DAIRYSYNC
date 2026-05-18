@@ -61,6 +61,10 @@
                Delete
             </a>
 
+            <a class="btn" href="{% url 'generate_qr_code' fridge.id %}">
+            QR Code
+            </a>
+
         </td>
 
     </tr>
@@ -74,9 +78,7 @@
     {% endfor %}
 
 </table>
-<a class="btn" href="{% url 'generate_qr_code' fridge.id %}">
-    QR Code
-</a>
+
 
 {% if fridge.qr_code %}
     <br>

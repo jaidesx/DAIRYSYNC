@@ -401,13 +401,6 @@ def receive_sensor_data(request):
                             quantity_needed=20,
                             status='pending'
                         )
-                    if not existing_pending_order:
-                        RestockOrder.objects.create(
-                            fridge=fridge,
-                            product=slot.product,
-                            quantity_needed=20,
-                            status='pending'
-                        )
 
             return JsonResponse({
                 'status': 'success',
