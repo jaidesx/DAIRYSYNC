@@ -1,0 +1,174 @@
+# ===============================
+# DAIRYSYNC PROJECT .gitignore
+# Django + Python + ESP32 + Reports
+# ===============================
+
+
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.python-version
+
+
+# ===============================
+# Virtual Environment
+# ===============================
+venv/
+env/
+ENV/
+.venv/
+.dairysync_env/
+
+
+# ===============================
+# Django
+# ===============================
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+static_root/
+
+
+# ===============================
+# Environment Variables / Secrets
+# ===============================
+.env
+.env.*
+*.env
+
+# Never push secret keys or API credentials
+secrets.json
+credentials.json
+
+
+# ===============================
+# Database Dumps / Backups
+# ===============================
+*.sql
+*.sqlite3
+*.dump
+*.backup
+backup/
+backups/
+
+
+# ===============================
+# Uploaded Files
+# ===============================
+uploads/
+qr_codes/
+
+
+# ===============================
+# Email / SMS Credentials
+# ===============================
+africastalking_credentials.txt
+gmail_app_password.txt
+
+
+# ===============================
+# IDEs and Editors
+# ===============================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+
+# ===============================
+# Operating System Files
+# ===============================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ===============================
+# Testing and Coverage
+# ===============================
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+coverage.xml
+
+
+# ===============================
+# Jupyter Notebook
+# ===============================
+.ipynb_checkpoints/
+
+
+# ===============================
+# Node / Frontend
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+
+# ===============================
+# Static Build Files
+# ===============================
+dist/
+build/
+
+
+# ===============================
+# Arduino / ESP32
+# ===============================
+*.bin
+*.elf
+*.hex
+*.ino.cpp
+.vs/
+build/
+.cache/
+
+
+# ===============================
+# Reports and Generated Documents
+# ===============================
+generated_reports/
+*.tmp
+~$*.docx
+~$*.pptx
+~$*.xlsx
+
+
+# ===============================
+# PDF / Word drafts if you do not want to track them
+# Uncomment if needed
+# ===============================
+# *.pdf
+# *.docx
+# *.pptx
+# *.xlsx
+
+
+# ===============================
+# Logs
+# ===============================
+logs/
+*.log
+
+
+# ===============================
+# Deployment
+# ===============================
+*.pem
+*.key
+*.crt
+*.csr
+gunicorn.pid
+supervisor.sock

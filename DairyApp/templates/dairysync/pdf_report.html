@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial; }
+        h1 { color: #082b5f; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th { background: #082b5f; color: white; padding: 6px; }
+        td { border: 1px solid #ccc; padding: 6px; }
+    </style>
+</head>
+<body>
+
+<h1>DAIRYSYNC SYSTEM REPORT</h1>
+
+<h2>Fridge Status</h2>
+<table>
+    <tr>
+        <th>Code</th>
+        <th>Institution</th>
+        <th>Temp</th>
+        <th>Status</th>
+    </tr>
+    {% for fridge in fridges %}
+    <tr>
+        <td>{{ fridge.fridge_code }}</td>
+        <td>{{ fridge.institution.name }}</td>
+        <td>{{ fridge.temperature }} °C</td>
+        <td>{{ fridge.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Recent Alerts</h2>
+<table>
+    <tr>
+        <th>Fridge</th>
+        <th>Type</th>
+        <th>Message</th>
+    </tr>
+    {% for alert in alerts %}
+    <tr>
+        <td>{{ alert.fridge.fridge_code }}</td>
+        <td>{{ alert.alert_type }}</td>
+        <td>{{ alert.message }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Restock Orders</h2>
+<table>
+    <tr>
+        <th>Fridge</th>
+        <th>Product</th>
+        <th>Quantity</th>
+        <th>Status</th>
+    </tr>
+    {% for order in orders %}
+    <tr>
+        <td>{{ order.fridge.fridge_code }}</td>
+        <td>{{ order.product.name }}</td>
+        <td>{{ order.quantity_needed }}</td>
+        <td>{{ order.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+</body>
+</html>

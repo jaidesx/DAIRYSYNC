@@ -1,0 +1,86 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+
+    <h1>Fridges</h1>
+
+    <a class="btn" href="{% url 'add_fridge' %}">
+        Add Fridge
+    </a>
+
+</div>
+
+<table>
+
+    <tr>
+        <th>Code</th>
+        <th>Institution</th>
+        <th>Temperature</th>
+        <th>Humidity</th>
+        <th>Voltage</th>
+        <th>Status</th>
+        <th>Actions</th>
+    </tr>
+
+    {% for fridge in fridges %}
+
+    <tr>
+
+        <td>{{ fridge.fridge_code }}</td>
+
+        <td>{{ fridge.institution.name }}</td>
+
+        <td>{{ fridge.temperature }} °C</td>
+
+        <td>{{ fridge.humidity }}%</td>
+
+        <td>{{ fridge.voltage }}V</td>
+
+        <td>
+
+            {% if fridge.status == 'online' %}
+                <span class="status-online">Online</span>
+            {% else %}
+                <span class="status-offline">{{ fridge.status }}</span>
+            {% endif %}
+
+        </td>
+
+        <td>
+
+            <a class="btn"
+               href="{% url 'edit_fridge' fridge.id %}">
+               Edit
+            </a>
+
+            <a class="btn"
+               onclick="return confirm('Delete fridge?')"
+               href="{% url 'delete_fridge' fridge.id %}">
+               Delete
+            </a>
+
+        </td>
+
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="7">No fridges found</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+<a class="btn" href="{% url 'generate_qr_code' fridge.id %}">
+    QR Code
+</a>
+
+{% if fridge.qr_code %}
+    <br>
+    <img src="{{ fridge.qr_code.url }}" width="90">
+{% endif %}
+
+{% endblock %}

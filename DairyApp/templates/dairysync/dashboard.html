@@ -1,0 +1,122 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>DAIRYSYNC Dashboard</h1>
+    <p>IoT Smart Fridge Monitoring System</p>
+</div>
+
+<div class="cards">
+
+    <div class="card">
+        <h3>Total Fridges</h3>
+        <p>{{ total_fridges }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Online Fridges</h3>
+        <p>{{ online_fridges }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Offline Fridges</h3>
+        <p>{{ offline_fridges }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Faulty Fridges</h3>
+        <p>{{ faulty_fridges }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Products</h3>
+        <p>{{ total_products }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Alerts</h3>
+        <p>{{ active_alerts }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Pending Orders</h3>
+        <p>{{ pending_orders }}</p>
+    </div>
+
+</div>
+
+<div class="card">
+
+    <h2>Fridge Status Chart</h2>
+
+    <canvas id="fridgeChart"
+        data-online="{{ online_fridges }}"
+        data-offline="{{ offline_fridges }}"
+        data-faulty="{{ faulty_fridges }}">
+    </canvas>
+
+</div>
+
+<script>
+
+const ctx = document.getElementById('fridgeChart');
+
+const onlineFridges  = parseInt(ctx.dataset.online)  || 0;
+const offlineFridges = parseInt(ctx.dataset.offline) || 0;
+const faultyFridges  = parseInt(ctx.dataset.faulty)  || 0;
+
+new Chart(ctx, {
+    type: 'bar',
+
+    data: {
+        labels: ['Online', 'Offline', 'Faulty'],
+
+        datasets: [{
+            label: 'Fridge Status',
+
+            data: [onlineFridges, offlineFridges, faultyFridges]
+        }]
+    }
+});
+
+</script>
+
+<br>
+
+<h2>Recent Alerts</h2>
+
+<table>
+
+    <tr>
+        <th>Fridge</th>
+        <th>Type</th>
+        <th>Message</th>
+        <th>Date</th>
+    </tr>
+
+    {% for alert in recent_alerts %}
+
+    <tr>
+        <td>{{ alert.fridge.fridge_code }}</td>
+        <td>{{ alert.alert_type }}</td>
+        <td>{{ alert.message }}</td>
+        <td>{{ alert.created_at }}</td>
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="4">No alerts</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+<script>
+    setTimeout(function(){
+        window.location.reload();
+    }, 30000);
+</script>
+
+{% endblock %}

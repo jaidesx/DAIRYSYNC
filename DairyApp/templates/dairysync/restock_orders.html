@@ -1,0 +1,61 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>Restock Orders</h1>
+</div>
+
+<table>
+
+    <tr>
+        <th>Fridge</th>
+        <th>Institution</th>
+        <th>Product</th>
+        <th>Quantity Needed</th>
+        <th>Status</th>
+        <th>Actions</th>
+    </tr>
+
+    {% for order in orders %}
+
+    <tr>
+
+        <td>{{ order.fridge.fridge_code }}</td>
+
+        <td>{{ order.fridge.institution.name }}</td>
+
+        <td>{{ order.product.name }}</td>
+
+        <td>{{ order.quantity_needed }}</td>
+
+        <td>{{ order.status }}</td>
+
+        <td>
+
+            {% if order.status == 'pending' %}
+
+                <a class="btn"
+                   href="{% url 'approve_order' order.id %}">
+                   Approve
+                </a>
+
+            {% else %}
+                Approved
+            {% endif %}
+
+        </td>
+
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="6">No restock orders found</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+{% endblock %}

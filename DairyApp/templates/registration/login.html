@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <title>DAIRYSYNC Login</title>
+
+    <style>
+
+        body{
+            font-family:Arial;
+            background:#082b5f;
+        }
+
+        .login-box{
+            width:400px;
+            background:white;
+            margin:120px auto;
+            padding:30px;
+            border-radius:12px;
+        }
+
+        h1{
+            text-align:center;
+            margin-bottom:25px;
+            color:#082b5f;
+        }
+
+        input{
+            width:100%;
+            padding:12px;
+            margin-bottom:15px;
+        }
+
+        button{
+            width:100%;
+            padding:12px;
+            background:#082b5f;
+            color:white;
+            border:none;
+            cursor:pointer;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div class="login-box">
+
+    <h1>DAIRYSYNC LOGIN</h1>
+
+    <form method="POST">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button type="submit">
+            Login
+        </button>
+
+    </form>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,56 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>Sensor Readings</h1>
+</div>
+
+<table>
+
+    <tr>
+        <th>Fridge</th>
+        <th>Temperature</th>
+        <th>Humidity</th>
+        <th>Voltage</th>
+        <th>Door</th>
+        <th>Date</th>
+    </tr>
+
+    {% for reading in readings %}
+
+    <tr>
+
+        <td>{{ reading.fridge.fridge_code }}</td>
+
+        <td>{{ reading.temperature }} °C</td>
+
+        <td>{{ reading.humidity }}%</td>
+
+        <td>{{ reading.voltage }}V</td>
+
+        <td>
+
+            {% if reading.door_open %}
+                Open
+            {% else %}
+                Closed
+            {% endif %}
+
+        </td>
+
+        <td>{{ reading.recorded_at }}</td>
+
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="6">No readings found</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+{% endblock %}

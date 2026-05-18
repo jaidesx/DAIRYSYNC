@@ -1,0 +1,25 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>{{ title }}</h1>
+</div>
+
+<div class="form-box">
+
+    <form method="POST">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button type="submit">
+            Save
+        </button>
+
+    </form>
+
+</div>
+
+{% endblock %}

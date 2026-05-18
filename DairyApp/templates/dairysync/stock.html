@@ -1,0 +1,56 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>Stock Levels</h1>
+</div>
+
+<table>
+
+    <tr>
+        <th>Fridge</th>
+        <th>Institution</th>
+        <th>Product</th>
+        <th>Slot</th>
+        <th>Current Stock</th>
+        <th>Status</th>
+    </tr>
+
+    {% for slot in slots %}
+
+    <tr>
+
+        <td>{{ slot.fridge.fridge_code }}</td>
+
+        <td>{{ slot.fridge.institution.name }}</td>
+
+        <td>{{ slot.product.name }}</td>
+
+        <td>{{ slot.slot_number }}</td>
+
+        <td>{{ slot.current_stock }}</td>
+
+        <td>
+
+            {% if slot.current_stock <= slot.product.minimum_stock %}
+                <span class="status-offline">Low Stock</span>
+            {% else %}
+                <span class="status-online">Enough</span>
+            {% endif %}
+
+        </td>
+
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="6">No stock data found</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+{% endblock %}

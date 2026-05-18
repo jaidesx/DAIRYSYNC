@@ -1,0 +1,34 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <h1>AI Stock Prediction</h1>
+    <p>Predicts which products may need restocking soon.</p>
+</div>
+
+<table>
+    <tr>
+        <th>Fridge</th>
+        <th>Product</th>
+        <th>Current Stock</th>
+        <th>Minimum Stock</th>
+        <th>Prediction</th>
+    </tr>
+
+    {% for item in predictions %}
+    <tr>
+        <td>{{ item.fridge }}</td>
+        <td>{{ item.product }}</td>
+        <td>{{ item.current_stock }}</td>
+        <td>{{ item.minimum_stock }}</td>
+        <td>{{ item.prediction }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="5">No prediction data available</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% endblock %}

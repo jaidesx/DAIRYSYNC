@@ -1,0 +1,64 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+
+    <h1>Institutions</h1>
+
+    <a class="btn" href="{% url 'add_institution' %}">
+        Add Institution
+    </a>
+
+</div>
+
+<table>
+
+    <tr>
+        <th>Name</th>
+        <th>Location</th>
+        <th>Contact Person</th>
+        <th>Phone</th>
+        <th>Actions</th>
+    </tr>
+
+    {% for institution in institutions %}
+
+    <tr>
+
+        <td>{{ institution.name }}</td>
+
+        <td>{{ institution.location }}</td>
+
+        <td>{{ institution.contact_person }}</td>
+
+        <td>{{ institution.phone }}</td>
+
+        <td>
+
+            <a class="btn"
+               href="{% url 'edit_institution' institution.id %}">
+               Edit
+            </a>
+
+            <a class="btn"
+               onclick="return confirm('Delete institution?')"
+               href="{% url 'delete_institution' institution.id %}">
+               Delete
+            </a>
+
+        </td>
+
+    </tr>
+
+    {% empty %}
+
+    <tr>
+        <td colspan="5">No institutions found</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+{% endblock %}
