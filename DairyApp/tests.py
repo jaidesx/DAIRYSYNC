@@ -1,4 +1,6 @@
-from django.test import TestCase, Client
+from unittest.mock import patch
+
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.contrib.auth.models import User
 
@@ -61,6 +63,7 @@ class DairyAppModelTests(TestCase):
         self.assertEqual(self.slot.current_stock, 10)
 
 
+@override_settings(DEVICE_API_KEY="DAIRYSYNC_SECRET_123")
 class DairyAppAPITests(TestCase):
 
     def setUp(self):
@@ -99,8 +102,11 @@ class DairyAppAPITests(TestCase):
             ir_sensor_pin=19
         )
 
-    def test_sensor_api_receives_data(self):
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_sensor_api_receives_data(self, mock_email, mock_sms):
         data = {
+            "api_key": "DAIRYSYNC_SECRET_123",
             "fridge_code": "FRIDGE001",
             "temperature": 4.5,
             "humidity": 60,
@@ -130,8 +136,14 @@ class DairyAppAPITests(TestCase):
         self.assertEqual(SensorReading.objects.count(), 1)
         self.assertEqual(StockReading.objects.count(), 1)
 
-    def test_high_temperature_creates_alert(self):
+        mock_sms.assert_not_called()
+        mock_email.assert_not_called()
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_high_temperature_creates_alert(self, mock_email, mock_sms):
         data = {
+            "api_key": "DAIRYSYNC_SECRET_123",
             "fridge_code": "FRIDGE001",
             "temperature": 9.0,
             "humidity": 70,
@@ -154,8 +166,14 @@ class DairyAppAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Alert.objects.filter(alert_type='high_temperature').exists())
 
-    def test_low_stock_creates_alert_and_order(self):
+        mock_sms.assert_called()
+        mock_email.assert_called()
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_low_stock_creates_alert_and_order(self, mock_email, mock_sms):
         data = {
+            "api_key": "DAIRYSYNC_SECRET_123",
             "fridge_code": "FRIDGE001",
             "temperature": 4.0,
             "humidity": 60,
@@ -178,6 +196,54 @@ class DairyAppAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Alert.objects.filter(alert_type='low_stock').exists())
         self.assertTrue(RestockOrder.objects.filter(status='pending').exists())
+
+        mock_sms.assert_called()
+        mock_email.assert_called()
+
+    def test_invalid_api_key_is_rejected(self):
+        data = {
+            "api_key": "WRONG_KEY",
+            "fridge_code": "FRIDGE001",
+            "temperature": 4.5,
+            "humidity": 60,
+            "voltage": 12,
+            "door_open": False,
+            "stock": []
+        }
+
+        response = self.client.post(
+            reverse('receive_sensor_data'),
+            data,
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_door_open_string_false_is_not_treated_as_true(self, mock_email, mock_sms):
+        data = {
+            "api_key": "DAIRYSYNC_SECRET_123",
+            "fridge_code": "FRIDGE001",
+            "temperature": 4.5,
+            "humidity": 60,
+            "voltage": 12,
+            "door_open": "false",
+            "stock": []
+        }
+
+        response = self.client.post(
+            reverse('receive_sensor_data'),
+            data,
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.fridge.refresh_from_db()
+
+        self.assertFalse(self.fridge.door_open)
+        self.assertFalse(Alert.objects.filter(alert_type='door_open').exists())
 
     def test_fridges_api_returns_data(self):
         response = self.client.get(reverse('api_fridges'))

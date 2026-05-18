@@ -1,13 +1,17 @@
 import json
 
-from django.http import JsonResponse
+from django.conf import settings
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
 from django.template.loader import get_template
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
 from xhtml2pdf import pisa
-from django.shortcuts import get_object_or_404
+
 from .utils import send_sms_alert, send_email_alert, generate_fridge_qr
 
 from .models import (
@@ -29,19 +33,16 @@ from .forms import (
     FridgeSlotForm,
 )
 
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-
 from .serializers import (
-    InstitutionSerializer,
     FridgeSerializer,
     ProductSerializer,
     FridgeSlotSerializer,
     SensorReadingSerializer,
-    StockReadingSerializer,
     RestockOrderSerializer,
     AlertSerializer,
 )
+
+
 
 @api_view(['GET'])
 def api_fridges(request):
@@ -84,6 +85,9 @@ def api_restock_orders(request):
     serializer = RestockOrderSerializer(orders, many=True)
     return Response(serializer.data)
 
+
+
+
 @login_required
 def dashboard(request):
     total_fridges = Fridge.objects.count()
@@ -95,8 +99,8 @@ def dashboard(request):
     active_alerts = Alert.objects.filter(resolved=False).count()
     pending_orders = RestockOrder.objects.filter(status='pending').count()
 
-    recent_alerts = Alert.objects.order_by('-created_at')[:5]
-    recent_transactions = Transaction.objects.order_by('-created_at')[:5]
+    recent_alerts = Alert.objects.select_related('fridge').order_by('-created_at')[:5]
+    recent_transactions = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')[:5]
 
     context = {
         'total_fridges': total_fridges,
@@ -111,6 +115,7 @@ def dashboard(request):
     }
 
     return render(request, 'dairysync/dashboard.html', context)
+
 
 
 @login_required
@@ -139,7 +144,12 @@ def stock_list(request):
 
 @login_required
 def restock_order_list(request):
-    orders = RestockOrder.objects.select_related('fridge', 'product', 'fridge__institution').order_by('-created_at')
+    orders = RestockOrder.objects.select_related(
+        'fridge',
+        'product',
+        'fridge__institution'
+    ).order_by('-created_at')
+
     return render(request, 'dairysync/restock_orders.html', {'orders': orders})
 
 
@@ -211,6 +221,8 @@ def add_fridge_slot(request):
     })
 
 
+
+
 @login_required
 def edit_institution(request, id):
     institution = get_object_or_404(Institution, id=id)
@@ -277,6 +289,7 @@ def delete_product(request, id):
     return redirect('product_list')
 
 
+
 @login_required
 def approve_order(request, id):
     order = get_object_or_404(RestockOrder, id=id)
@@ -293,142 +306,208 @@ def resolve_alert(request, id):
     return redirect('alert_list')
 
 
+
+def convert_to_boolean(value):
+    """
+    Converts ESP32 boolean values safely.
+    Handles:
+    true, false, "true", "false", 1, 0, "1", "0"
+    """
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, int):
+        return value == 1
+
+    value = str(value).strip().lower()
+
+    return value in ["true", "1", "yes", "open"]
+
+
+def create_alert_and_notify(fridge, alert_type, subject, message):
+    """
+    Creates a system alert and sends SMS/email notifications.
+    """
+
+    Alert.objects.create(
+        fridge=fridge,
+        alert_type=alert_type,
+        message=message
+    )
+
+    send_sms_alert(message)
+
+    send_email_alert(subject, message)
+
+
+
 @csrf_exempt
 def receive_sensor_data(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
+    if request.method != 'POST':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Only POST method allowed'
+        }, status=405)
 
-            fridge_code = data.get('fridge_code')
-            temperature = float(data.get('temperature'))
-            humidity = float(data.get('humidity'))
-            voltage = float(data.get('voltage'))
-            door_open = bool(data.get('door_open'))
-            stock_data = data.get('stock', [])
+    try:
+        data = json.loads(request.body)
 
-            fridge = Fridge.objects.get(fridge_code=fridge_code)
+        # Device API key security
+        device_api_key = data.get("api_key")
 
-            fridge.temperature = temperature
-            fridge.humidity = humidity
-            fridge.voltage = voltage
-            fridge.door_open = door_open
-            fridge.status = 'online'
-            fridge.save()
+        if device_api_key != settings.DEVICE_API_KEY:
+            return JsonResponse({
+                "status": "error",
+                "message": "Invalid device API key"
+            }, status=403)
 
-            SensorReading.objects.create(
+        fridge_code = data.get('fridge_code')
+
+        if not fridge_code:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'fridge_code is required'
+            }, status=400)
+
+        temperature = float(data.get('temperature'))
+        humidity = float(data.get('humidity'))
+        voltage = float(data.get('voltage'))
+
+        door_open = convert_to_boolean(data.get('door_open'))
+
+        stock_data = data.get('stock', [])
+
+        fridge = Fridge.objects.get(fridge_code=fridge_code)
+
+        fridge.temperature = temperature
+        fridge.humidity = humidity
+        fridge.voltage = voltage
+        fridge.door_open = door_open
+        fridge.status = 'online'
+        fridge.save()
+
+        SensorReading.objects.create(
+            fridge=fridge,
+            temperature=temperature,
+            humidity=humidity,
+            voltage=voltage,
+            door_open=door_open
+        )
+
+        # Temperature alert
+        if temperature > 6:
+            message = f"High temperature detected in {fridge.fridge_code}: {temperature} °C"
+
+            create_alert_and_notify(
                 fridge=fridge,
-                temperature=temperature,
-                humidity=humidity,
-                voltage=voltage,
-                door_open=door_open
+                alert_type='high_temperature',
+                subject='DAIRYSYNC Temperature Alert',
+                message=message
             )
 
-            if temperature > 6:
+        # Door alert
+        if door_open:
+            message = f"Fridge door is open for {fridge.fridge_code}"
 
-                message = f"High temperature detected in {fridge.fridge_code}: {temperature} °C"
+            create_alert_and_notify(
+                fridge=fridge,
+                alert_type='door_open',
+                subject='DAIRYSYNC Door Alert',
+                message=message
+            )
 
-                Alert.objects.create(
+        # Power alert
+        if voltage < 10:
+            message = f"Low voltage detected in {fridge.fridge_code}: {voltage}V"
+
+            create_alert_and_notify(
+                fridge=fridge,
+                alert_type='power_fault',
+                subject='DAIRYSYNC Power Fault Alert',
+                message=message
+            )
+
+        # Stock data processing
+        for item in stock_data:
+            slot_number = item.get('slot_number')
+            stock_level = int(item.get('stock_level'))
+
+            slot = FridgeSlot.objects.get(
+                fridge=fridge,
+                slot_number=slot_number
+            )
+
+            slot.current_stock = stock_level
+            slot.save()
+
+            StockReading.objects.create(
+                fridge_slot=slot,
+                stock_level=stock_level
+            )
+
+            if stock_level <= slot.product.minimum_stock:
+                message = (
+                    f"Low stock for {slot.product.name} "
+                    f"in {fridge.fridge_code}. Remaining: {stock_level}"
+                )
+
+                create_alert_and_notify(
                     fridge=fridge,
-                    alert_type='high_temperature',
+                    alert_type='low_stock',
+                    subject='DAIRYSYNC Low Stock Alert',
                     message=message
                 )
 
-                send_sms_alert(message)
-
-                send_email_alert(
-                    "DAIRYSYNC Temperature Alert",
-                    message
-                )
-
-            if door_open:
-                Alert.objects.create(
+                existing_pending_order = RestockOrder.objects.filter(
                     fridge=fridge,
-                    alert_type='door_open',
-                    message='Fridge door is open'
-                )
+                    product=slot.product,
+                    status='pending'
+                ).exists()
 
-            if voltage < 10:
-                Alert.objects.create(
-                    fridge=fridge,
-                    alert_type='power_fault',
-                    message=f'Low voltage detected: {voltage}V'
-                )
-
-            for item in stock_data:
-                slot_number = item.get('slot_number')
-                stock_level = int(item.get('stock_level'))
-
-                slot = FridgeSlot.objects.get(
-                    fridge=fridge,
-                    slot_number=slot_number
-                )
-
-                slot.current_stock = stock_level
-                slot.save()
-
-                StockReading.objects.create(
-                    fridge_slot=slot,
-                    stock_level=stock_level
-                )
-
-                if stock_level <= slot.product.minimum_stock:
-
-                    message = f"Low stock for {slot.product.name} in {fridge.fridge_code}. Remaining: {stock_level}"
-
-                    Alert.objects.create(
-                        fridge=fridge,
-                        alert_type='low_stock',
-                        message=message
-                    )
-
-                    send_sms_alert(message)
-
-                    send_email_alert(
-                        "DAIRYSYNC Low Stock Alert",
-                        message
-                    )
-
-                    existing_pending_order = RestockOrder.objects.filter(
+                if not existing_pending_order:
+                    RestockOrder.objects.create(
                         fridge=fridge,
                         product=slot.product,
+                        quantity_needed=20,
                         status='pending'
-                    ).exists()
+                    )
 
-                    if not existing_pending_order:
-                        RestockOrder.objects.create(
-                            fridge=fridge,
-                            product=slot.product,
-                            quantity_needed=20,
-                            status='pending'
-                        )
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Sensor data received successfully'
+        })
 
-            return JsonResponse({
-                'status': 'success',
-                'message': 'Sensor data received successfully'
-            })
+    except Fridge.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Fridge not found'
+        }, status=404)
 
-        except Fridge.DoesNotExist:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Fridge not found'
-            }, status=404)
+    except FridgeSlot.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Fridge slot not found'
+        }, status=404)
 
-        except FridgeSlot.DoesNotExist:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Fridge slot not found'
-            }, status=404)
+    except ValueError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid number format in temperature, humidity, voltage, or stock level'
+        }, status=400)
 
-        except Exception as e:
-            return JsonResponse({
-                'status': 'error',
-                'message': str(e)
-            }, status=400)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON data'
+        }, status=400)
 
-    return JsonResponse({
-        'status': 'error',
-        'message': 'Only POST method allowed'
-    }, status=405)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)
+
 
 @login_required
 def generate_qr_code(request, id):
@@ -436,12 +515,14 @@ def generate_qr_code(request, id):
     generate_fridge_qr(fridge)
     return redirect('fridge_list')
 
+
+
 @login_required
 def download_system_report(request):
-    fridges = Fridge.objects.all()
-    alerts = Alert.objects.order_by('-created_at')[:20]
-    orders = RestockOrder.objects.order_by('-created_at')[:20]
-    readings = SensorReading.objects.order_by('-recorded_at')[:20]
+    fridges = Fridge.objects.select_related('institution').all()
+    alerts = Alert.objects.select_related('fridge').order_by('-created_at')[:20]
+    orders = RestockOrder.objects.select_related('fridge', 'product').order_by('-created_at')[:20]
+    readings = SensorReading.objects.select_related('fridge').order_by('-recorded_at')[:20]
 
     template = get_template('dairysync/pdf_report.html')
 
@@ -455,9 +536,14 @@ def download_system_report(request):
     response = HttpResponse(content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="DAIRYSYNC_Report.pdf"'
 
-    pisa.CreatePDF(html, dest=response)
+    pisa_status = pisa.CreatePDF(html, dest=response)
+
+    if pisa_status.err:
+        return HttpResponse('Error generating PDF report', status=500)
 
     return response
+
+
 
 @login_required
 def ai_stock_prediction(request):
@@ -476,10 +562,13 @@ def ai_stock_prediction(request):
 
             if average_stock <= slot.product.minimum_stock:
                 prediction = "Stock likely to run out soon"
+
             elif average_stock <= slot.product.minimum_stock + 5:
                 prediction = "Stock reducing, prepare restock"
+
             else:
                 prediction = "Stock is stable"
+
         else:
             prediction = "Not enough data"
 
