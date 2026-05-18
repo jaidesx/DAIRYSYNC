@@ -1,240 +1,413 @@
+{% load static %}
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>DAIRYSYNC</title>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="{% static 'dairysync/images/synclogo.png' %}">
+
+    <link rel="stylesheet" href="{% static 'dairysync/css/style.css' %}">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-
-        *{
-            margin:0;
-            padding:0;
-            box-sizing:border-box;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        body{
-            font-family:Arial, sans-serif;
-            background:#f4f7fb;
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #1f2937;
         }
 
-        .sidebar{
-            width:250px;
-            height:100vh;
-            background:#082b5f;
-            position:fixed;
-            left:0;
-            top:0;
-            overflow:auto;
+        .sidebar {
+            width: 250px;
+            height: 100vh;
+            background: #082b5f;
+            position: fixed;
+            left: 0;
+            top: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            box-shadow: 3px 0 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
         }
 
-        .sidebar h2{
-            color:white;
-            text-align:center;
-            padding:25px 0;
-            border-bottom:1px solid rgba(255,255,255,0.2);
+        .brand-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.18);
         }
 
-        .sidebar a{
-            display:block;
-            color:white;
-            text-decoration:none;
-            padding:15px 25px;
-            transition:0.3s;
+        .brand-box {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                padding: 20px 10px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+            }
+
+            .brand-box img {
+                width: 120px;
+                height: auto;
+                object-fit: contain;
+            }
+
+            .brand-box h2 {
+                color: white;
+                font-size: 20px;
+                font-weight: bold;
+                margin: 0;
+            }
+
+        .nav-link,
+        .dropdown-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            color: white;
+            background: transparent;
+            text-decoration: none;
+            padding: 14px 20px;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            font-size: 15px;
+            text-align: left;
+            border-radius: 0;
+            transition: 0.25s ease;
         }
 
-        .sidebar a:hover{
-            background:#0f4c9c;
+        .nav-link:hover,
+        .dropdown-btn:hover {
+            background: #1559a8;
         }
 
-        .main{
-            margin-left:250px;
-            padding:25px;
+        .dropdown {
+            width: 100%;
         }
 
-        .topbar{
-            background:white;
-            padding:20px;
-            border-radius:12px;
-            margin-bottom:25px;
-            box-shadow:0 2px 10px rgba(0,0,0,0.08);
+        .dropdown-icon {
+            font-size: 12px;
+            transition: transform 0.25s ease;
         }
 
-        .topbar h1{
-            color:#082b5f;
+        .dropdown-content {
+            display: none;
+            background: #092a55;
         }
 
-        .cards{
-            display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-            gap:20px;
-            margin-bottom:25px;
+        .dropdown-content a {
+            display: block;
+            color: #e8f1ff;
+            text-decoration: none;
+            padding: 12px 20px 12px 40px;
+            font-size: 14px;
+            transition: 0.25s ease;
         }
 
-        .card{
-            background:white;
-            padding:25px;
-            border-radius:12px;
-            box-shadow:0 2px 10px rgba(0,0,0,0.08);
-            transition:0.3s;
+        .dropdown-content a:hover {
+            background: #1f6bc2;
         }
 
-        .card:hover{
-            transform:translateY(-5px);
+        .dropdown.active .dropdown-content {
+            display: block;
         }
 
-        .card h3{
-            color:#555;
-            margin-bottom:10px;
+        .dropdown.active .dropdown-icon {
+            transform: rotate(180deg);
         }
 
-        .card p{
-            font-size:30px;
-            color:#082b5f;
-            font-weight:bold;
+        .logout-form {
+            padding: 15px 20px 25px;
         }
 
-        table{
-            width:100%;
-            border-collapse:collapse;
-            background:white;
-            border-radius:12px;
-            overflow:hidden;
-            box-shadow:0 2px 10px rgba(0,0,0,0.08);
-            margin-top:15px;
+        .logout-btn {
+            width: 100%;
+            background: #dc2626;
+            color: white;
+            padding: 11px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: 0.25s ease;
         }
 
-        th{
-            background:#082b5f;
-            color:white;
-            padding:14px;
-            text-align:left;
+        .logout-btn:hover {
+            background: #b91c1c;
         }
 
-        td{
-            padding:14px;
-            border-bottom:1px solid #ddd;
+        .main {
+            margin-left: 250px;
+            padding: 25px;
+            min-height: 100vh;
         }
 
-        .btn{
-            background:#082b5f;
-            color:white;
-            padding:8px 14px;
-            text-decoration:none;
-            border-radius:6px;
-            display:inline-block;
+        .topbar {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
         }
 
-        .btn:hover{
-            background:#0f4c9c;
+        .topbar h1 {
+            color: #082b5f;
         }
 
-        .status-online{
-            color:green;
-            font-weight:bold;
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
         }
 
-        .status-offline{
-            color:red;
-            font-weight:bold;
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            transition: 0.3s;
         }
 
-        .form-box{
-            background:white;
-            padding:25px;
-            border-radius:12px;
-            box-shadow:0 2px 10px rgba(0,0,0,0.08);
-            max-width:700px;
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card h3 {
+            color: #555;
+            margin-bottom: 10px;
+        }
+
+        .card p {
+            font-size: 30px;
+            color: #082b5f;
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-top: 15px;
+        }
+
+        th {
+            background: #082b5f;
+            color: white;
+            padding: 14px;
+            text-align: left;
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .btn {
+            background: #082b5f;
+            color: white;
+            padding: 8px 14px;
+            text-decoration: none;
+            border-radius: 6px;
+            display: inline-block;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #0f4c9c;
+        }
+
+        .status-online {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-offline {
+            color: red;
+            font-weight: bold;
+        }
+
+        .form-box {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            max-width: 700px;
         }
 
         input,
         select,
-        textarea{
-            width:100%;
-            padding:12px;
-            margin-top:6px;
-            margin-bottom:15px;
-            border:1px solid #ccc;
-            border-radius:8px;
+        textarea {
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
         }
 
-        button{
-            background:#082b5f;
-            color:white;
-            border:none;
-            padding:12px 18px;
-            border-radius:8px;
-            cursor:pointer;
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #082b5f;
+            box-shadow: 0 0 0 2px rgba(8, 43, 95, 0.15);
         }
 
-        @media(max-width:900px){
+        button {
+            font-family: inherit;
+        }
 
-            .sidebar{
-                width:100%;
-                height:auto;
-                position:relative;
+        @media(max-width: 900px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
             }
 
-            .main{
-                margin-left:0;
+            .main {
+                margin-left: 0;
+                padding: 15px;
+            }
+
+            .brand-box {
+                justify-content: center;
+            }
+
+            table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
             }
         }
-
     </style>
-
 </head>
 
 <body>
 
-<div class="sidebar">
+    <aside class="sidebar">
 
-    <h2>DAIRYSYNC</h2>
+        <div class="brand-box">
+            <img src="{% static 'dairysync/images/synclogo.png' %}" alt="DAIRYSYNC Logo">
+            <h2>DAIRYSYNC</h2>
+        </div>
 
-    <a href="{% url 'dashboard' %}">Dashboard</a>
+        <a class="nav-link" href="{% url 'dashboard' %}">
+            Dashboard
+        </a>
 
-    <a href="{% url 'institution_list' %}">Institutions</a>
+        <div class="dropdown">
+            <button type="button" class="dropdown-btn">
+                <span>Institutions</span>
+                <span class="dropdown-icon">▼</span>
+            </button>
 
-    <a href="{% url 'fridge_list' %}">Fridges</a>
+            <div class="dropdown-content">
+                <a href="{% url 'institution_list' %}">View Institutions</a>
+                <a href="{% url 'add_institution' %}">Add Institution</a>
+            </div>
+        </div>
 
-    <a href="{% url 'product_list' %}">Products</a>
+        <div class="dropdown">
+            <button type="button" class="dropdown-btn">
+                <span>Fridges</span>
+                <span class="dropdown-icon">▼</span>
+            </button>
 
-    <a href="{% url 'stock_list' %}">Stock Levels</a>
+            <div class="dropdown-content">
+                <a href="{% url 'fridge_list' %}">View Fridges</a>
+                <a href="{% url 'add_fridge' %}">Add Fridge</a>
+                <a href="{% url 'add_fridge_slot' %}">Add Fridge Slot</a>
+            </div>
+        </div>
 
-    <a href="{% url 'restock_order_list' %}">Restock Orders</a>
+        <div class="dropdown">
+            <button type="button" class="dropdown-btn">
+                <span>Products</span>
+                <span class="dropdown-icon">▼</span>
+            </button>
 
-    <a href="{% url 'readings_list' %}">Sensor Readings</a>
+            <div class="dropdown-content">
+                <a href="{% url 'product_list' %}">View Products</a>
+                <a href="{% url 'add_product' %}">Add Product</a>
+            </div>
+        </div>
 
-    <a href="{% url 'alert_list' %}">Alerts</a>
+        <div class="dropdown">
+            <button type="button" class="dropdown-btn">
+                <span>Stock Management</span>
+                <span class="dropdown-icon">▼</span>
+            </button>
 
-    <a href="{% url 'add_institution' %}">Add Institution</a>
+            <div class="dropdown-content">
+                <a href="{% url 'stock_list' %}">Stock Levels</a>
+                <a href="{% url 'restock_order_list' %}">Restock Orders</a>
+                <a href="{% url 'ai_stock_prediction' %}">AI Stock Prediction</a>
+            </div>
+        </div>
 
-    <a href="{% url 'add_fridge' %}">Add Fridge</a>
+        <div class="dropdown">
+            <button type="button" class="dropdown-btn">
+                <span>Monitoring</span>
+                <span class="dropdown-icon">▼</span>
+            </button>
 
-    <a href="{% url 'add_product' %}">Add Product</a>
+            <div class="dropdown-content">
+                <a href="{% url 'readings_list' %}">Sensor Readings</a>
+                <a href="{% url 'alert_list' %}">Alerts</a>
+            </div>
+        </div>
 
-    <a href="{% url 'add_fridge_slot' %}">Add Fridge Slot</a>
+        <a class="nav-link" href="{% url 'download_system_report' %}">
+            Download PDF Report
+        </a>
 
-    <a href="{% url 'ai_stock_prediction' %}">AI Stock Prediction</a>
+        <form method="POST" action="{% url 'logout' %}" class="logout-form">
+            {% csrf_token %}
+            <button type="submit" class="logout-btn">
+                Logout
+            </button>
+        </form>
 
-    <a href="{% url 'download_system_report' %}">Download PDF Report</a>
-    <form method="POST" action="{% url 'logout' %}" style="padding:15px 25px;">
-    {% csrf_token %}
-    <button type="submit" style="width:100%; background:#dc2626;">
-        Logout
-    </button>
-</form>
+    </aside>
 
-</div>
+    <main class="main">
+        {% block content %}
+        {% endblock %}
+    </main>
 
-<div class="main">
+    <script src="{% static 'dairysync/js/main.js' %}"></script>
 
-    {% block content %}
-    {% endblock %}
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const dropdownButtons = document.querySelectorAll(".dropdown-btn");
 
-</div>
-
+            dropdownButtons.forEach(function (button) {
+                button.addEventListener("click", function () {
+                    const dropdown = this.closest(".dropdown");
+                    dropdown.classList.toggle("active");
+                });
+            });
+        });
+    </script>
 
 </body>
 </html>
