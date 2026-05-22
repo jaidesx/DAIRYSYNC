@@ -5,11 +5,18 @@
 <div class="topbar">
     <div class="topbar-left">
         <h1>Sensor Readings</h1>
-        <p>Latest 50 readings from all fridges</p>
+        <p>Sensor readings from all fridges, newest first</p>
     </div>
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Filter by fridge code…">
+        <button type="submit" class="btn">Search</button>
+        {% if q %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_readings' %}{% if q %}?q={{ q }}{% endif %}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} reading{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -22,7 +29,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for reading in readings %}
+            {% for reading in page_obj %}
             <tr>
                 <td><span class="code-tag">{{ reading.fridge.fridge_code }}</span></td>
                 <td>
@@ -64,6 +71,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

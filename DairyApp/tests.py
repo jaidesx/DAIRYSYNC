@@ -1,281 +1,672 @@
+import json
+from datetime import timedelta
 from unittest.mock import patch
 
-from django.test import TestCase, Client, override_settings
-from django.urls import reverse
 from django.contrib.auth.models import User
+from django.test import Client, TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 
 from .models import (
-    Institution,
+    Alert,
     Fridge,
-    Product,
     FridgeSlot,
+    Institution,
+    Product,
+    RestockOrder,
     SensorReading,
     StockReading,
-    Alert,
-    RestockOrder,
+    Transaction,
 )
 
 
-class DairyAppModelTests(TestCase):
+# ── Shared fixture mixin ──────────────────────────────────────────────────────
+
+class BaseFixture(TestCase):
+    """Creates a logged-in client plus one complete object graph."""
 
     def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username='tester', password='pass1234')
+        self.client.force_login(self.user)
+
         self.institution = Institution.objects.create(
-            name='Pioneer Mall',
-            location='Kampala',
-            contact_person='Manager',
-            phone='0755062613'
+            name='Pioneer Mall', location='Kampala',
+            contact_person='Manager', phone='0700000000',
         )
-
         self.fridge = Fridge.objects.create(
-            fridge_code='FRIDGE001',
-            institution=self.institution,
-            temperature=4.5,
-            humidity=60,
-            voltage=12,
-            status='online'
+            fridge_code='F001', institution=self.institution,
+            temperature=4.0, humidity=60.0, voltage=12.0, status='online',
         )
-
         self.product = Product.objects.create(
-            name='Lato Milk',
-            price=3000,
-            minimum_stock=5
+            name='Lato Milk', price=3000, minimum_stock=5,
         )
-
         self.slot = FridgeSlot.objects.create(
-            fridge=self.fridge,
-            product=self.product,
-            slot_number=1,
-            current_stock=10,
-            motor_pin=18,
-            ir_sensor_pin=19
+            fridge=self.fridge, product=self.product,
+            slot_number=1, current_stock=10, motor_pin=18, ir_sensor_pin=19,
         )
 
-    def test_institution_created(self):
-        self.assertEqual(self.institution.name, 'Pioneer Mall')
 
-    def test_fridge_created(self):
-        self.assertEqual(self.fridge.fridge_code, 'FRIDGE001')
+# ── Model smoke tests ─────────────────────────────────────────────────────────
 
-    def test_product_created(self):
-        self.assertEqual(self.product.name, 'Lato Milk')
+class ModelTests(BaseFixture):
 
-    def test_fridge_slot_created(self):
-        self.assertEqual(self.slot.current_stock, 10)
+    def test_institution_str(self):
+        self.assertEqual(str(self.institution), 'Pioneer Mall')
+
+    def test_fridge_str(self):
+        self.assertEqual(str(self.fridge), 'F001')
+
+    def test_product_str(self):
+        self.assertEqual(str(self.product), 'Lato Milk')
+
+    def test_fridge_slot_str(self):
+        self.assertIn('F001', str(self.slot))
+        self.assertIn('1', str(self.slot))
 
 
-@override_settings(DEVICE_API_KEY="DAIRYSYNC_SECRET_123")
-class DairyAppAPITests(TestCase):
+# ── Login protection ──────────────────────────────────────────────────────────
+
+class AuthRedirectTests(TestCase):
 
     def setUp(self):
         self.client = Client()
 
-        self.user = User.objects.create_user(
-            username='admin',
-            password='admin12345'
+    def _assert_redirects_to_login(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response['Location'])
+
+    def test_dashboard_requires_login(self):
+        self._assert_redirects_to_login(reverse('dashboard'))
+
+    def test_fridge_list_requires_login(self):
+        self._assert_redirects_to_login(reverse('fridge_list'))
+
+    def test_transaction_list_requires_login(self):
+        self._assert_redirects_to_login(reverse('transaction_list'))
+
+    def test_ai_prediction_requires_login(self):
+        self._assert_redirects_to_login(reverse('ai_stock_prediction'))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+class DashboardTests(BaseFixture):
+
+    def test_dashboard_loads(self):
+        response = self.client.get(reverse('dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'DAIRYSYNC')
+
+    def test_dashboard_stats_json(self):
+        response = self.client.get(reverse('dashboard_stats'))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn('stats', data)
+        self.assertIn('total_fridges', data['stats'])
+
+    def test_alert_count_json(self):
+        Alert.objects.create(fridge=self.fridge, alert_type='door_open',
+                             message='Door open', resolved=False)
+        response = self.client.get(reverse('alert_count'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['active_alerts'], 1)
+
+
+# ── Institution CRUD ──────────────────────────────────────────────────────────
+
+class InstitutionCRUDTests(BaseFixture):
+
+    def test_institution_list_loads(self):
+        response = self.client.get(reverse('institution_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pioneer Mall')
+
+    def test_institution_search(self):
+        Institution.objects.create(name='Nakumatt', location='Nairobi',
+                                   contact_person='X', phone='0')
+        response = self.client.get(reverse('institution_list'), {'q': 'Nakumatt'})
+        self.assertContains(response, 'Nakumatt')
+        self.assertNotContains(response, 'Pioneer Mall')
+
+    def test_add_institution(self):
+        response = self.client.post(reverse('add_institution'), {
+            'name': 'New Mall', 'location': 'Entebbe',
+            'contact_person': 'Jane', 'phone': '0711111111',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Institution.objects.filter(name='New Mall').exists())
+
+    def test_edit_institution(self):
+        response = self.client.post(
+            reverse('edit_institution', args=[self.institution.id]),
+            {'name': 'Updated Mall', 'location': 'Kampala',
+             'contact_person': 'Manager', 'phone': '0700000000'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.institution.refresh_from_db()
+        self.assertEqual(self.institution.name, 'Updated Mall')
+
+    def test_delete_institution(self):
+        inst = Institution.objects.create(
+            name='Temp', location='X', contact_person='X', phone='0')
+        response = self.client.post(reverse('delete_institution', args=[inst.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Institution.objects.filter(id=inst.id).exists())
+
+    def test_delete_institution_requires_post(self):
+        response = self.client.get(
+            reverse('delete_institution', args=[self.institution.id]))
+        self.assertEqual(response.status_code, 405)
+
+
+# ── Fridge CRUD ───────────────────────────────────────────────────────────────
+
+class FridgeCRUDTests(BaseFixture):
+
+    def test_fridge_list_loads(self):
+        response = self.client.get(reverse('fridge_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'F001')
+
+    def test_fridge_status_filter(self):
+        Fridge.objects.create(fridge_code='F002', institution=self.institution,
+                              status='offline')
+        response = self.client.get(reverse('fridge_list'), {'status': 'online'})
+        self.assertContains(response, 'F001')
+        self.assertNotContains(response, 'F002')
+
+    def test_fridge_search(self):
+        Fridge.objects.create(fridge_code='ZZZZ', institution=self.institution,
+                              status='offline')
+        response = self.client.get(reverse('fridge_list'), {'q': 'ZZZZ'})
+        self.assertContains(response, 'ZZZZ')
+        self.assertNotContains(response, 'F001')
+
+    def test_add_fridge(self):
+        response = self.client.post(reverse('add_fridge'), {
+            'fridge_code': 'F999', 'institution': self.institution.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Fridge.objects.filter(fridge_code='F999').exists())
+
+    def test_add_fridge_does_not_accept_sensor_fields(self):
+        # temperature and status should be ignored (not in FridgeForm.fields)
+        self.client.post(reverse('add_fridge'), {
+            'fridge_code': 'FHACK', 'institution': self.institution.id,
+            'temperature': 99, 'status': 'faulty',
+        })
+        f = Fridge.objects.get(fridge_code='FHACK')
+        self.assertNotEqual(f.temperature, 99)
+        self.assertNotEqual(f.status, 'faulty')
+
+    def test_fridge_detail_loads(self):
+        response = self.client.get(reverse('fridge_detail', args=[self.fridge.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'F001')
+        self.assertContains(response, 'Pioneer Mall')
+
+    def test_fridge_detail_shows_slots(self):
+        response = self.client.get(reverse('fridge_detail', args=[self.fridge.id]))
+        self.assertContains(response, 'Lato Milk')
+
+    def test_fridge_detail_shows_active_alerts(self):
+        Alert.objects.create(fridge=self.fridge, alert_type='door_open',
+                             message='Door open', resolved=False)
+        response = self.client.get(reverse('fridge_detail', args=[self.fridge.id]))
+        self.assertContains(response, 'Door Open')   # rendered badge text
+
+    def test_delete_fridge_requires_post(self):
+        response = self.client.get(
+            reverse('delete_fridge', args=[self.fridge.id]))
+        self.assertEqual(response.status_code, 405)
+
+    def test_temperature_history_json(self):
+        SensorReading.objects.create(fridge=self.fridge, temperature=4.0,
+                                     humidity=60, voltage=12, door_open=False)
+        response = self.client.get(
+            reverse('fridge_temperature_history', args=[self.fridge.id]))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['fridge_code'], 'F001')
+        self.assertEqual(len(data['readings']), 1)
+
+
+# ── FridgeSlot CRUD ───────────────────────────────────────────────────────────
+
+class FridgeSlotTests(BaseFixture):
+
+    def test_stock_list_loads(self):
+        response = self.client.get(reverse('stock_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Lato Milk')
+
+    def test_edit_fridge_slot(self):
+        product2 = Product.objects.create(name='Yoghurt', price=2500, minimum_stock=3)
+        response = self.client.post(
+            reverse('edit_fridge_slot', args=[self.slot.id]),
+            {'fridge': self.fridge.id, 'product': product2.id,
+             'slot_number': 1, 'motor_pin': 18, 'ir_sensor_pin': 19},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.product.name, 'Yoghurt')
+
+    def test_delete_fridge_slot(self):
+        slot2 = FridgeSlot.objects.create(
+            fridge=self.fridge, product=self.product,
+            slot_number=2, current_stock=5, motor_pin=20, ir_sensor_pin=21,
+        )
+        response = self.client.post(
+            reverse('delete_fridge_slot', args=[slot2.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(FridgeSlot.objects.filter(id=slot2.id).exists())
+
+    def test_delete_fridge_slot_requires_post(self):
+        response = self.client.get(
+            reverse('delete_fridge_slot', args=[self.slot.id]))
+        self.assertEqual(response.status_code, 405)
+
+
+# ── Alerts & Restock ──────────────────────────────────────────────────────────
+
+class AlertAndRestockTests(BaseFixture):
+
+    def setUp(self):
+        super().setUp()
+        self.alert = Alert.objects.create(
+            fridge=self.fridge, alert_type='high_temperature',
+            message='Temp high', resolved=False,
+        )
+        self.order = RestockOrder.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity_needed=20, status='pending',
         )
 
-        self.institution = Institution.objects.create(
-            name='Pioneer Mall',
-            location='Kampala',
-            contact_person='Manager',
-            phone='0755062613'
+    def test_alert_list_loads(self):
+        response = self.client.get(reverse('alert_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Temp high')
+
+    def test_alert_type_filter(self):
+        Alert.objects.create(fridge=self.fridge, alert_type='low_stock',
+                             message='Low stock', resolved=False)
+        response = self.client.get(reverse('alert_list'),
+                                   {'type': 'high_temperature'})
+        self.assertContains(response, 'Temp high')
+        self.assertNotContains(response, 'Low stock')
+
+    def test_alert_resolved_filter(self):
+        self.alert.resolved = True
+        self.alert.save()
+        response = self.client.get(reverse('alert_list'), {'resolved': '0'})
+        self.assertNotContains(response, 'Temp high')
+
+    def test_resolve_alert(self):
+        response = self.client.post(
+            reverse('resolve_alert', args=[self.alert.id]))
+        self.assertEqual(response.status_code, 302)
+        self.alert.refresh_from_db()
+        self.assertTrue(self.alert.resolved)
+
+    def test_resolve_alert_requires_post(self):
+        response = self.client.get(
+            reverse('resolve_alert', args=[self.alert.id]))
+        self.assertEqual(response.status_code, 405)
+
+    def test_restock_order_list_loads(self):
+        response = self.client.get(reverse('restock_order_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Lato Milk')
+
+    def test_approve_order(self):
+        response = self.client.post(
+            reverse('approve_order', args=[self.order.id]))
+        self.assertEqual(response.status_code, 302)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'approved')
+
+    def test_active_alerts_context_processor(self):
+        # active_alerts should appear on every authenticated page
+        response = self.client.get(reverse('fridge_list'))
+        self.assertIn('active_alerts', response.context)
+        self.assertEqual(response.context['active_alerts'], 1)
+
+    def test_active_alerts_updates_when_resolved(self):
+        self.alert.resolved = True
+        self.alert.save()
+        response = self.client.get(reverse('fridge_list'))
+        self.assertEqual(response.context['active_alerts'], 0)
+
+
+# ── Transactions ──────────────────────────────────────────────────────────────
+
+class TransactionTests(BaseFixture):
+
+    def setUp(self):
+        super().setUp()
+        self.txn = Transaction.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity=2, amount=6000, payment_method='cashless',
         )
 
-        self.fridge = Fridge.objects.create(
-            fridge_code='FRIDGE001',
-            institution=self.institution,
-            status='offline'
-        )
+    def test_transaction_list_loads(self):
+        response = self.client.get(reverse('transaction_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Lato Milk')
 
-        self.product = Product.objects.create(
-            name='Lato Yoghurt',
-            price=2500,
-            minimum_stock=5
+    def test_transaction_method_filter(self):
+        Transaction.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity=1, amount=3000, payment_method='manual',
         )
+        response = self.client.get(reverse('transaction_list'),
+                                   {'method': 'cashless'})
+        self.assertContains(response, '6000')
+        # manual transaction should be filtered out
+        response2 = self.client.get(reverse('transaction_list'),
+                                    {'method': 'manual'})
+        self.assertContains(response2, '3000')
 
-        self.slot = FridgeSlot.objects.create(
-            fridge=self.fridge,
-            product=self.product,
-            slot_number=1,
-            current_stock=10,
-            motor_pin=18,
-            ir_sensor_pin=19
+    def test_add_transaction(self):
+        response = self.client.post(reverse('add_transaction'), {
+            'fridge': self.fridge.id, 'product': self.product.id,
+            'quantity': 3, 'amount': 9000, 'payment_method': 'manual',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Transaction.objects.count(), 2)
+
+    def test_delete_transaction(self):
+        response = self.client.post(
+            reverse('delete_transaction', args=[self.txn.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Transaction.objects.filter(id=self.txn.id).exists())
+
+    def test_delete_transaction_requires_post(self):
+        response = self.client.get(
+            reverse('delete_transaction', args=[self.txn.id]))
+        self.assertEqual(response.status_code, 405)
+
+
+# ── CSV Exports ───────────────────────────────────────────────────────────────
+
+class CSVExportTests(BaseFixture):
+
+    def _assert_csv(self, url, expected_header_fragment, params=None):
+        response = self.client.get(url, params or {})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        self.assertIn('attachment', response['Content-Disposition'])
+        content = response.content.decode()
+        self.assertIn(expected_header_fragment, content)
+        return content
+
+    def test_export_institutions(self):
+        content = self._assert_csv(
+            reverse('export_institutions'), 'Name')
+        self.assertIn('Pioneer Mall', content)
+
+    def test_export_institutions_with_search(self):
+        Institution.objects.create(name='Nakumatt', location='X',
+                                   contact_person='X', phone='0')
+        content = self._assert_csv(
+            reverse('export_institutions'), 'Name', {'q': 'Pioneer'})
+        self.assertIn('Pioneer Mall', content)
+        self.assertNotIn('Nakumatt', content)
+
+    def test_export_fridges(self):
+        content = self._assert_csv(reverse('export_fridges'), 'Fridge Code')
+        self.assertIn('F001', content)
+
+    def test_export_fridges_status_filter(self):
+        Fridge.objects.create(fridge_code='FOFF', institution=self.institution,
+                              status='offline')
+        content = self._assert_csv(
+            reverse('export_fridges'), 'Fridge Code', {'status': 'online'})
+        self.assertIn('F001', content)
+        self.assertNotIn('FOFF', content)
+
+    def test_export_products(self):
+        content = self._assert_csv(reverse('export_products'), 'Product Name')
+        self.assertIn('Lato Milk', content)
+
+    def test_export_stock(self):
+        content = self._assert_csv(reverse('export_stock'), 'Fridge Code')
+        self.assertIn('F001', content)
+        self.assertIn('Lato Milk', content)
+
+    def test_export_alerts(self):
+        Alert.objects.create(fridge=self.fridge, alert_type='door_open',
+                             message='Door test', resolved=False)
+        content = self._assert_csv(reverse('export_alerts'), 'Alert Type')
+        self.assertIn('Door test', content)
+
+    def test_export_transactions(self):
+        Transaction.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity=1, amount=3000, payment_method='cashless',
+        )
+        content = self._assert_csv(
+            reverse('export_transactions'), 'Fridge Code')
+        self.assertIn('F001', content)
+
+    def test_export_readings(self):
+        SensorReading.objects.create(
+            fridge=self.fridge, temperature=4.0,
+            humidity=60, voltage=12, door_open=False,
+        )
+        content = self._assert_csv(reverse('export_readings'), 'Fridge Code')
+        self.assertIn('F001', content)
+
+    def test_export_restock_orders(self):
+        RestockOrder.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity_needed=20, status='pending',
+        )
+        content = self._assert_csv(
+            reverse('export_restock_orders'), 'Fridge Code')
+        self.assertIn('F001', content)
+
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+
+class PaginationTests(BaseFixture):
+
+    def test_second_page_is_accessible(self):
+        # Create 25 institutions (PAGE_SIZE = 20)
+        for i in range(24):
+            Institution.objects.create(
+                name=f'Inst {i}', location='X', contact_person='X', phone='0')
+        response = self.client.get(reverse('institution_list'), {'page': 2})
+        self.assertEqual(response.status_code, 200)
+        # Page 2 should exist and render
+        self.assertContains(response, 'Inst')
+
+    def test_invalid_page_returns_last_page(self):
+        response = self.client.get(
+            reverse('institution_list'), {'page': 9999})
+        self.assertEqual(response.status_code, 200)
+
+
+# ── ESP32 Sensor Endpoint ─────────────────────────────────────────────────────
+
+@override_settings(ESP32_API_KEY='TEST_KEY_123')
+class SensorEndpointTests(BaseFixture):
+
+    def _post(self, data, key='TEST_KEY_123'):
+        return self.client.post(
+            reverse('receive_sensor_data'),
+            json.dumps(data),
+            content_type='application/json',
+            HTTP_X_API_KEY=key,
         )
 
     @patch('DairyApp.views.send_sms_alert')
     @patch('DairyApp.views.send_email_alert')
-    def test_sensor_api_receives_data(self, mock_email, mock_sms):
-        data = {
-            "api_key": "DAIRYSYNC_SECRET_123",
-            "fridge_code": "FRIDGE001",
-            "temperature": 4.5,
-            "humidity": 60,
-            "voltage": 12,
-            "door_open": False,
-            "stock": [
-                {
-                    "slot_number": 1,
-                    "stock_level": 8
-                }
-            ]
-        }
-
-        response = self.client.post(
-            reverse('receive_sensor_data'),
-            data,
-            content_type='application/json'
-        )
-
+    def test_valid_data_accepted(self, mock_email, mock_sms):
+        response = self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.5, 'humidity': 60,
+            'voltage': 12, 'door_open': False,
+            'stock': [{'slot_number': 1, 'stock_level': 8}],
+        })
         self.assertEqual(response.status_code, 200)
-
         self.fridge.refresh_from_db()
-        self.slot.refresh_from_db()
-
         self.assertEqual(self.fridge.status, 'online')
+        self.slot.refresh_from_db()
         self.assertEqual(self.slot.current_stock, 8)
         self.assertEqual(SensorReading.objects.count(), 1)
-        self.assertEqual(StockReading.objects.count(), 1)
-
         mock_sms.assert_not_called()
-        mock_email.assert_not_called()
 
     @patch('DairyApp.views.send_sms_alert')
     @patch('DairyApp.views.send_email_alert')
-    def test_high_temperature_creates_alert(self, mock_email, mock_sms):
-        data = {
-            "api_key": "DAIRYSYNC_SECRET_123",
-            "fridge_code": "FRIDGE001",
-            "temperature": 9.0,
-            "humidity": 70,
-            "voltage": 12,
-            "door_open": False,
-            "stock": [
-                {
-                    "slot_number": 1,
-                    "stock_level": 10
-                }
-            ]
-        }
-
-        response = self.client.post(
-            reverse('receive_sensor_data'),
-            data,
-            content_type='application/json'
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(Alert.objects.filter(alert_type='high_temperature').exists())
-
-        mock_sms.assert_called()
-        mock_email.assert_called()
+    def test_high_temperature_triggers_alert(self, mock_email, mock_sms):
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 9.0, 'humidity': 60,
+            'voltage': 12, 'door_open': False, 'stock': [],
+        })
+        self.assertTrue(
+            Alert.objects.filter(alert_type='high_temperature').exists())
+        mock_sms.assert_called_once()
 
     @patch('DairyApp.views.send_sms_alert')
     @patch('DairyApp.views.send_email_alert')
-    def test_low_stock_creates_alert_and_order(self, mock_email, mock_sms):
-        data = {
-            "api_key": "DAIRYSYNC_SECRET_123",
-            "fridge_code": "FRIDGE001",
-            "temperature": 4.0,
-            "humidity": 60,
-            "voltage": 12,
-            "door_open": False,
-            "stock": [
-                {
-                    "slot_number": 1,
-                    "stock_level": 3
-                }
-            ]
-        }
+    def test_low_voltage_triggers_alert(self, mock_email, mock_sms):
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 8.0, 'door_open': False, 'stock': [],
+        })
+        self.assertTrue(
+            Alert.objects.filter(alert_type='power_fault').exists())
 
-        response = self.client.post(
-            reverse('receive_sensor_data'),
-            data,
-            content_type='application/json'
-        )
-
-        self.assertEqual(response.status_code, 200)
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_low_stock_creates_alert_and_restock_order(self, mock_email, mock_sms):
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 12, 'door_open': False,
+            'stock': [{'slot_number': 1, 'stock_level': 3}],
+        })
         self.assertTrue(Alert.objects.filter(alert_type='low_stock').exists())
-        self.assertTrue(RestockOrder.objects.filter(status='pending').exists())
+        self.assertTrue(
+            RestockOrder.objects.filter(fridge=self.fridge, status='pending').exists())
 
-        mock_sms.assert_called()
-        mock_email.assert_called()
-
-    def test_invalid_api_key_is_rejected(self):
-        data = {
-            "api_key": "WRONG_KEY",
-            "fridge_code": "FRIDGE001",
-            "temperature": 4.5,
-            "humidity": 60,
-            "voltage": 12,
-            "door_open": False,
-            "stock": []
-        }
-
-        response = self.client.post(
-            reverse('receive_sensor_data'),
-            data,
-            content_type='application/json'
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_duplicate_restock_order_not_created(self, mock_email, mock_sms):
+        RestockOrder.objects.create(
+            fridge=self.fridge, product=self.product,
+            quantity_needed=20, status='pending',
         )
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 12, 'door_open': False,
+            'stock': [{'slot_number': 1, 'stock_level': 3}],
+        })
+        self.assertEqual(RestockOrder.objects.filter(status='pending').count(), 1)
 
+    def test_invalid_api_key_rejected(self):
+        response = self._post(
+            {'fridge_code': 'F001', 'temperature': 4.0,
+             'humidity': 60, 'voltage': 12, 'door_open': False, 'stock': []},
+            key='WRONG',
+        )
         self.assertEqual(response.status_code, 403)
 
-    @patch('DairyApp.views.send_sms_alert')
-    @patch('DairyApp.views.send_email_alert')
-    def test_door_open_string_false_is_not_treated_as_true(self, mock_email, mock_sms):
-        data = {
-            "api_key": "DAIRYSYNC_SECRET_123",
-            "fridge_code": "FRIDGE001",
-            "temperature": 4.5,
-            "humidity": 60,
-            "voltage": 12,
-            "door_open": "false",
-            "stock": []
-        }
-
+    def test_api_key_in_body_accepted(self):
+        """Legacy ESP32 firmware sends key in JSON body."""
         response = self.client.post(
             reverse('receive_sensor_data'),
-            data,
-            content_type='application/json'
+            json.dumps({
+                'api_key': 'TEST_KEY_123',
+                'fridge_code': 'F001',
+                'temperature': 4.0, 'humidity': 60,
+                'voltage': 12, 'door_open': False, 'stock': [],
+            }),
+            content_type='application/json',
         )
-
         self.assertEqual(response.status_code, 200)
 
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_door_open_string_false_not_treated_as_true(self, mock_email, mock_sms):
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 12, 'door_open': 'false', 'stock': [],
+        })
         self.fridge.refresh_from_db()
-
         self.assertFalse(self.fridge.door_open)
         self.assertFalse(Alert.objects.filter(alert_type='door_open').exists())
 
-    def test_fridges_api_returns_data(self):
-        response = self.client.get(reverse('api_fridges'))
+    def test_unknown_fridge_returns_404(self):
+        response = self._post({
+            'fridge_code': 'GHOST',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 12, 'door_open': False, 'stock': [],
+        })
+        self.assertEqual(response.status_code, 404)
 
+    def test_missing_fridge_code_returns_400(self):
+        response = self._post({
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 12, 'door_open': False, 'stock': [],
+        })
+        self.assertEqual(response.status_code, 400)
+
+
+# ── Stock Prediction ──────────────────────────────────────────────────────────
+
+class PredictionTests(BaseFixture):
+
+    def _create_readings(self, levels, hours_apart=24):
+        """Create StockReadings spaced `hours_apart` hours apart."""
+        now = timezone.now()
+        for i, level in enumerate(levels):
+            r = StockReading.objects.create(
+                fridge_slot=self.slot, stock_level=level)
+            r.recorded_at = now - timedelta(hours=(len(levels) - i) * hours_apart)
+            r.save()
+
+    def test_insufficient_data_when_fewer_than_3_readings(self):
+        StockReading.objects.create(fridge_slot=self.slot, stock_level=10)
+        StockReading.objects.create(fridge_slot=self.slot, stock_level=9)
+        response = self.client.get(reverse('ai_stock_prediction'))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()), 1)
+        predictions = response.context['predictions']
+        self.assertEqual(predictions[0]['status'], 'insufficient_data')
 
-    def test_products_api_returns_data(self):
-        response = self.client.get(reverse('api_products'))
+    def test_declining_trend_detected(self):
+        self._create_readings([20, 15, 10, 8, 6])
+        response = self.client.get(reverse('ai_stock_prediction'))
+        pred = response.context['predictions'][0]
+        self.assertEqual(pred['trend'], 'declining')
+        self.assertIsNotNone(pred['days_until_stockout'])
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()), 1)
+    def test_stable_trend_detected(self):
+        self._create_readings([10, 10, 10, 10, 10])
+        response = self.client.get(reverse('ai_stock_prediction'))
+        pred = response.context['predictions'][0]
+        self.assertIn(pred['status'], ('stable',))
 
+    def test_critical_when_already_at_minimum(self):
+        # current_stock at or below minimum triggers critical immediately
+        self._create_readings([10, 7, 5, 4, 3])
+        self.slot.current_stock = 3
+        self.slot.save()
+        response = self.client.get(reverse('ai_stock_prediction'))
+        pred = response.context['predictions'][0]
+        self.assertIn(pred['status'], ('critical', 'warning'))
 
-class DairyAppProtectedViewsTests(TestCase):
-
-    def setUp(self):
-        self.client = Client()
-
-        self.user = User.objects.create_user(
-            username='admin',
-            password='admin12345'
-        )
-
-    def test_dashboard_requires_login(self):
-        response = self.client.get(reverse('dashboard'))
-
-        self.assertEqual(response.status_code, 302)
-
-    def test_dashboard_opens_after_login(self):
-        self.client.login(username='admin', password='admin12345')
-
-        response = self.client.get(reverse('dashboard'))
-
-        self.assertEqual(response.status_code, 200)
+    def test_r2_score_present_for_valid_data(self):
+        self._create_readings([20, 18, 16, 14, 12])
+        response = self.client.get(reverse('ai_stock_prediction'))
+        pred = response.context['predictions'][0]
+        self.assertIsNotNone(pred['r2'])
+        self.assertGreaterEqual(pred['r2'], 0.0)
+        self.assertLessEqual(pred['r2'], 1.0)

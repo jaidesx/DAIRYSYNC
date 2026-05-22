@@ -13,6 +13,19 @@
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search by fridge code or institution…">
+        <select name="status" onchange="this.form.submit()">
+            <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+            <option value="online"  {% if status_filter == 'online'  %}selected{% endif %}>Online</option>
+            <option value="offline" {% if status_filter == 'offline' %}selected{% endif %}>Offline</option>
+            <option value="faulty"  {% if status_filter == 'faulty'  %}selected{% endif %}>Faulty</option>
+        </select>
+        <button type="submit" class="btn">Search</button>
+        {% if q or status_filter %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_fridges' %}?q={{ q }}&status={{ status_filter }}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -26,7 +39,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for fridge in fridges %}
+            {% for fridge in page_obj %}
             <tr>
                 <td><span class="code-tag">{{ fridge.fridge_code }}</span></td>
                 <td>{{ fridge.institution.name }}</td>
@@ -55,6 +68,7 @@
                     {% endif %}
                 </td>
                 <td style="white-space:nowrap">
+                    <a class="btn" href="{% url 'fridge_detail' fridge.id %}">View</a>
                     <a class="btn" href="{% url 'edit_fridge' fridge.id %}">Edit</a>
                     <form method="POST" action="{% url 'delete_fridge' fridge.id %}"
                           style="display:inline"
@@ -62,7 +76,10 @@
                         {% csrf_token %}
                         <button type="submit" class="btn btn-danger">Delete</button>
                     </form>
-                    <a class="btn" href="{% url 'generate_qr_code' fridge.id %}">QR</a>
+                    <form method="POST" action="{% url 'generate_qr_code' fridge.id %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn">QR</button>
+                    </form>
                 </td>
             </tr>
             {% empty %}
@@ -84,6 +101,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

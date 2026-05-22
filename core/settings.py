@@ -40,8 +40,6 @@ ALERT_EMAIL = os.getenv("ALERT_EMAIL")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-EBUG = os.getenv("DEBUG", "True") == "True"
-
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
     "127.0.0.1,localhost"
@@ -137,6 +135,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'DairyApp.context_processors.active_alerts',
             ],
         },
     },
@@ -222,27 +221,6 @@ AXES_LOCKOUT_TEMPLATE = 'dairysync/lockout.html'
 
 # Reset failure count on successful login
 AXES_RESET_ON_SUCCESS = True
-
-# ── REST Framework ──────────────────────────────────────────
-REST_FRAMEWORK = {
-    # Require authentication for all API endpoints by default
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    # Throttle anonymous and authenticated users
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle',
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '30/minute',
-        'user': '300/minute',
-    }
-}
-
 
 # ── ESP32 API Key ───────────────────────────────────────────
 # Set this as an environment variable — never hardcode in source

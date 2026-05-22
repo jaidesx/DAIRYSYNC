@@ -1,19 +1,22 @@
+import csv
 import json
+from datetime import timedelta
+
+import numpy as np
+from django.utils import timezone
+from sklearn.linear_model import LinearRegression
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db.models import Avg, Q
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.template.loader import get_template
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from functools import wraps
-
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
-from django.views.decorators.http import require_GET
-from django.db.models import Avg
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -38,6 +41,7 @@ from .forms import (
     FridgeForm,
     ProductForm,
     FridgeSlotForm,
+    TransactionForm,
 )
 
 from .serializers import (
@@ -48,6 +52,12 @@ from .serializers import (
     RestockOrderSerializer,
     AlertSerializer,
 )
+
+
+_PAGE_SIZE = 20
+
+def _paginate(request, qs):
+    return Paginator(qs, _PAGE_SIZE).get_page(request.GET.get('page', 1))
 
 
 # ============================================================
@@ -64,7 +74,7 @@ def require_api_key(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
         header_key = request.headers.get('X-Api-Key', '')
-        expected   = getattr(settings, 'DEVICE_API_KEY', '')
+        expected   = getattr(settings, 'ESP32_API_KEY', '')
 
         # Also allow key in JSON body for backward-compat with existing ESP32 firmware
         body_key = ''
@@ -134,15 +144,25 @@ def api_restock_orders(request):
 
 @login_required
 def dashboard(request):
-    total_fridges   = Fridge.objects.count()
-    online_fridges  = Fridge.objects.filter(status='online').count()
-    offline_fridges = Fridge.objects.filter(status='offline').count()
-    faulty_fridges  = Fridge.objects.filter(status='faulty').count()
-    total_products  = Product.objects.count()
-    active_alerts   = Alert.objects.filter(resolved=False).count()
-    pending_orders  = RestockOrder.objects.filter(status='pending').count()
+    total_fridges        = Fridge.objects.count()
+    online_fridges       = Fridge.objects.filter(status='online').count()
+    offline_fridges      = Fridge.objects.filter(status='offline').count()
+    faulty_fridges       = Fridge.objects.filter(status='faulty').count()
+    total_products       = Product.objects.count()
+    total_institutions   = Institution.objects.count()
+    active_alerts        = Alert.objects.filter(resolved=False).count()
+    pending_orders       = RestockOrder.objects.filter(status='pending').count()
+    fridge_health_pct    = round(online_fridges / total_fridges * 100) if total_fridges else 0
 
-    recent_alerts       = Alert.objects.select_related('fridge').order_by('-created_at')[:5]
+    agg = Fridge.objects.filter(status='online').aggregate(
+        avg_temp=Avg('temperature'),
+        avg_humidity=Avg('humidity'),
+    )
+    avg_temp     = round(agg['avg_temp'], 1)     if agg['avg_temp']     else None
+    avg_humidity = round(agg['avg_humidity'], 1) if agg['avg_humidity'] else None
+
+    fridges             = Fridge.objects.select_related('institution').all()
+    recent_alerts       = Alert.objects.select_related('fridge').filter(resolved=False).order_by('-created_at')[:5]
     recent_transactions = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')[:5]
 
     context = {
@@ -151,8 +171,13 @@ def dashboard(request):
         'offline_fridges':     offline_fridges,
         'faulty_fridges':      faulty_fridges,
         'total_products':      total_products,
+        'total_institutions':  total_institutions,
         'active_alerts':       active_alerts,
         'pending_orders':      pending_orders,
+        'fridge_health_pct':   fridge_health_pct,
+        'avg_temp':            avg_temp,
+        'avg_humidity':        avg_humidity,
+        'fridges':             fridges,
         'recent_alerts':       recent_alerts,
         'recent_transactions': recent_transactions,
     }
@@ -166,46 +191,110 @@ def dashboard(request):
 
 @login_required
 def institution_list(request):
-    institutions = Institution.objects.all()
-    return render(request, 'dairysync/institutions.html', {'institutions': institutions})
+    q = request.GET.get('q', '').strip()
+    qs = Institution.objects.all()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q) | Q(location__icontains=q) | Q(contact_person__icontains=q)
+        )
+    return render(request, 'dairysync/institutions.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+    })
 
 
 @login_required
 def fridge_list(request):
-    fridges = Fridge.objects.select_related('institution').all()
-    return render(request, 'dairysync/fridges.html', {'fridges': fridges})
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
+    qs = Fridge.objects.select_related('institution').all()
+    if q:
+        qs = qs.filter(Q(fridge_code__icontains=q) | Q(institution__name__icontains=q))
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'dairysync/fridges.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+        'status_filter': status_filter,
+    })
 
 
 @login_required
 def product_list(request):
-    products = Product.objects.all()
-    return render(request, 'dairysync/products.html', {'products': products})
+    q = request.GET.get('q', '').strip()
+    qs = Product.objects.all()
+    if q:
+        qs = qs.filter(Q(name__icontains=q))
+    return render(request, 'dairysync/products.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+    })
 
 
 @login_required
 def stock_list(request):
-    slots = FridgeSlot.objects.select_related('fridge', 'product', 'fridge__institution').all()
-    return render(request, 'dairysync/stock.html', {'slots': slots})
+    q = request.GET.get('q', '').strip()
+    qs = FridgeSlot.objects.select_related('fridge', 'product', 'fridge__institution').all()
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    return render(request, 'dairysync/stock.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+    })
 
 
 @login_required
 def restock_order_list(request):
-    orders = RestockOrder.objects.select_related(
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
+    qs = RestockOrder.objects.select_related(
         'fridge', 'product', 'fridge__institution'
     ).order_by('-created_at')
-    return render(request, 'dairysync/restock_orders.html', {'orders': orders})
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'dairysync/restock_orders.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+        'status_filter': status_filter,
+    })
 
 
 @login_required
 def readings_list(request):
-    readings = SensorReading.objects.select_related('fridge').order_by('-recorded_at')[:50]
-    return render(request, 'dairysync/readings.html', {'readings': readings})
+    q = request.GET.get('q', '').strip()
+    qs = SensorReading.objects.select_related('fridge').order_by('-recorded_at')
+    if q:
+        qs = qs.filter(Q(fridge__fridge_code__icontains=q))
+    return render(request, 'dairysync/readings.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+    })
 
 
 @login_required
 def alert_list(request):
-    alerts = Alert.objects.select_related('fridge').order_by('-created_at')
-    return render(request, 'dairysync/alerts.html', {'alerts': alerts})
+    q = request.GET.get('q', '').strip()
+    type_filter = request.GET.get('type', '')
+    resolved_filter = request.GET.get('resolved', '')
+    qs = Alert.objects.select_related('fridge').order_by('-created_at')
+    if q:
+        qs = qs.filter(Q(fridge__fridge_code__icontains=q) | Q(message__icontains=q))
+    if type_filter:
+        qs = qs.filter(alert_type=type_filter)
+    if resolved_filter in ('0', '1'):
+        qs = qs.filter(resolved=(resolved_filter == '1'))
+    return render(request, 'dairysync/alerts.html', {
+        'page_obj': _paginate(request, qs),
+        'q': q,
+        'type_filter': type_filter,
+        'resolved_filter': resolved_filter,
+    })
 
 
 # ============================================================
@@ -327,6 +416,94 @@ def add_fridge_slot(request):
     return render(request, 'dairysync/form.html', {'form': form, 'title': 'Add Fridge Slot'})
 
 
+@login_required
+def edit_fridge_slot(request, id):
+    slot = get_object_or_404(FridgeSlot, id=id)
+    form = FridgeSlotForm(request.POST or None, instance=slot)
+    if form.is_valid():
+        form.save()
+        messages.success(request, 'Fridge slot updated successfully.')
+        return redirect('stock_list')
+    return render(request, 'dairysync/form.html', {'form': form, 'title': 'Edit Fridge Slot'})
+
+
+@login_required
+@require_POST
+def delete_fridge_slot(request, id):
+    slot = get_object_or_404(FridgeSlot, id=id)
+    label = f"Slot {slot.slot_number} ({slot.fridge.fridge_code})"
+    slot.delete()
+    messages.success(request, f'{label} deleted.')
+    return redirect('stock_list')
+
+
+# ============================================================
+#  TRANSACTIONS
+# ============================================================
+
+@login_required
+def transaction_list(request):
+    q = request.GET.get('q', '').strip()
+    method_filter = request.GET.get('method', '')
+    qs = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    if method_filter:
+        qs = qs.filter(payment_method=method_filter)
+    return render(request, 'dairysync/transactions.html', {
+        'page_obj':      _paginate(request, qs),
+        'q':             q,
+        'method_filter': method_filter,
+    })
+
+
+@login_required
+def add_transaction(request):
+    form = TransactionForm(request.POST or None)
+    if form.is_valid():
+        form.save()
+        messages.success(request, 'Transaction recorded.')
+        return redirect('transaction_list')
+    return render(request, 'dairysync/form.html', {'form': form, 'title': 'Record Transaction'})
+
+
+@login_required
+@require_POST
+def delete_transaction(request, id):
+    txn = get_object_or_404(Transaction, id=id)
+    txn.delete()
+    messages.success(request, 'Transaction deleted.')
+    return redirect('transaction_list')
+
+
+# ============================================================
+#  FRIDGE DETAIL
+# ============================================================
+
+@login_required
+def fridge_detail(request, id):
+    fridge = get_object_or_404(Fridge.objects.select_related('institution'), id=id)
+    slots = FridgeSlot.objects.filter(fridge=fridge).select_related('product')
+    recent_readings = (
+        SensorReading.objects
+        .filter(fridge=fridge)
+        .order_by('-recorded_at')[:20]
+    )
+    active_fridge_alerts = (
+        Alert.objects
+        .filter(fridge=fridge, resolved=False)
+        .order_by('-created_at')
+    )
+    return render(request, 'dairysync/fridge_detail.html', {
+        'fridge':         fridge,
+        'slots':          slots,
+        'recent_readings': list(reversed(list(recent_readings))),
+        'alerts':         active_fridge_alerts,
+    })
+
+
 # ============================================================
 #  ALERTS & RESTOCK
 # ============================================================
@@ -356,6 +533,7 @@ def approve_order(request, id):
 # ============================================================
 
 @login_required
+@require_POST
 def generate_qr_code(request, id):
     fridge = get_object_or_404(Fridge, id=id)
     generate_fridge_qr(fridge)
@@ -403,29 +581,82 @@ def ai_stock_prediction(request):
     slots = FridgeSlot.objects.select_related('fridge', 'product').all()
 
     for slot in slots:
-        readings = StockReading.objects.filter(
-            fridge_slot=slot
-        ).order_by('-recorded_at')[:5]
+        readings = list(
+            StockReading.objects
+            .filter(fridge_slot=slot)
+            .order_by('recorded_at')
+        )
 
-        if readings.count() >= 2:
-            stock_values   = [r.stock_level for r in readings]
-            average_stock  = sum(stock_values) / len(stock_values)
-
-            if average_stock <= slot.product.minimum_stock:
-                prediction = 'Stock likely to run out soon'
-            elif average_stock <= slot.product.minimum_stock + 5:
-                prediction = 'Stock reducing, prepare restock'
-            else:
-                prediction = 'Stock is stable'
-        else:
-            prediction = 'Not enough data'
-
-        predictions.append({
+        base = {
             'fridge':        slot.fridge.fridge_code,
             'product':       slot.product.name,
             'current_stock': slot.current_stock,
             'minimum_stock': slot.product.minimum_stock,
-            'prediction':    prediction,
+            'reading_count': len(readings),
+        }
+
+        if len(readings) < 3:
+            predictions.append({**base,
+                'status': 'insufficient_data',
+                'trend': None, 'daily_rate': None,
+                'days_until_stockout': None, 'depletion_date': None, 'r2': None,
+            })
+            continue
+
+        t0 = readings[0].recorded_at
+        X = np.array([
+            (r.recorded_at - t0).total_seconds() / 3600
+            for r in readings
+        ]).reshape(-1, 1)
+        y = np.array([r.stock_level for r in readings], dtype=float)
+
+        # All readings at the same timestamp — can't fit a line
+        if X.max() == 0:
+            predictions.append({**base,
+                'status': 'insufficient_data',
+                'trend': None, 'daily_rate': None,
+                'days_until_stockout': None, 'depletion_date': None, 'r2': None,
+            })
+            continue
+
+        model = LinearRegression().fit(X, y)
+        slope_per_hour = float(model.coef_[0])
+        slope_per_day  = slope_per_hour * 24
+        r2             = round(float(model.score(X, y)), 2)
+
+        hours_now      = (timezone.now() - t0).total_seconds() / 3600
+        predicted_now  = float(model.predict([[hours_now]])[0])
+        min_stock      = slot.product.minimum_stock
+
+        if slope_per_hour >= 0:
+            trend  = 'increasing' if slope_per_hour > 0.01 else 'stable'
+            status = 'stable'
+            days_until_stockout = None
+            depletion_date      = None
+        else:
+            trend = 'declining'
+            if predicted_now <= min_stock:
+                days_until_stockout = 0
+                depletion_date      = timezone.now().date()
+                status              = 'critical'
+            else:
+                hours_left          = (min_stock - predicted_now) / slope_per_hour
+                days_until_stockout = round(hours_left / 24, 1)
+                depletion_date      = (timezone.now() + timedelta(hours=hours_left)).date()
+                if days_until_stockout <= 2:
+                    status = 'critical'
+                elif days_until_stockout <= 7:
+                    status = 'warning'
+                else:
+                    status = 'stable'
+
+        predictions.append({**base,
+            'status':             status,
+            'trend':              trend,
+            'daily_rate':         round(abs(slope_per_day), 2),
+            'days_until_stockout': days_until_stockout,
+            'depletion_date':     depletion_date,
+            'r2':                 r2,
         })
 
     return render(request, 'dairysync/ai_prediction.html', {'predictions': predictions})
@@ -716,6 +947,187 @@ def alert_count(request):
     ) or 0
 
     return JsonResponse({
-        'active_alerts': count,
+        'active_alerts':   count,
         'latest_alert_id': latest_id,
     })
+
+
+# ============================================================
+#  CSV EXPORT
+# ============================================================
+
+def _csv_response(filename, headers, rows):
+    """Return an HttpResponse streaming CSV data."""
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    writer = csv.writer(response)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return response
+
+
+@login_required
+def export_institutions(request):
+    q = request.GET.get('q', '').strip()
+    qs = Institution.objects.all()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q) | Q(location__icontains=q) | Q(contact_person__icontains=q)
+        )
+    rows = qs.values_list('name', 'location', 'contact_person', 'phone')
+    return _csv_response(
+        'institutions.csv',
+        ['Name', 'Location', 'Contact Person', 'Phone'],
+        rows,
+    )
+
+
+@login_required
+def export_fridges(request):
+    q             = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
+    qs = Fridge.objects.select_related('institution').all()
+    if q:
+        qs = qs.filter(Q(fridge_code__icontains=q) | Q(institution__name__icontains=q))
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    rows = [
+        (f.fridge_code, f.institution.name, f.status,
+         f.temperature, f.humidity, f.voltage,
+         'Yes' if f.door_open else 'No',
+         f.last_updated.strftime('%Y-%m-%d %H:%M'))
+        for f in qs
+    ]
+    return _csv_response(
+        'fridges.csv',
+        ['Fridge Code', 'Institution', 'Status', 'Temperature (°C)',
+         'Humidity (%)', 'Voltage (V)', 'Door Open', 'Last Updated'],
+        rows,
+    )
+
+
+@login_required
+def export_products(request):
+    q = request.GET.get('q', '').strip()
+    qs = Product.objects.all()
+    if q:
+        qs = qs.filter(Q(name__icontains=q))
+    rows = qs.values_list('name', 'price', 'minimum_stock')
+    return _csv_response(
+        'products.csv',
+        ['Product Name', 'Price', 'Minimum Stock'],
+        rows,
+    )
+
+
+@login_required
+def export_stock(request):
+    q = request.GET.get('q', '').strip()
+    qs = FridgeSlot.objects.select_related('fridge', 'product', 'fridge__institution').all()
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    rows = [
+        (s.fridge.fridge_code, s.fridge.institution.name,
+         s.product.name, s.slot_number,
+         s.current_stock, s.product.minimum_stock)
+        for s in qs
+    ]
+    return _csv_response(
+        'stock.csv',
+        ['Fridge Code', 'Institution', 'Product', 'Slot', 'Current Stock', 'Minimum Stock'],
+        rows,
+    )
+
+
+@login_required
+def export_restock_orders(request):
+    q             = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
+    qs = RestockOrder.objects.select_related('fridge', 'product', 'fridge__institution').order_by('-created_at')
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    rows = [
+        (o.fridge.fridge_code, o.fridge.institution.name,
+         o.product.name, o.quantity_needed, o.status,
+         o.created_at.strftime('%Y-%m-%d %H:%M'))
+        for o in qs
+    ]
+    return _csv_response(
+        'restock_orders.csv',
+        ['Fridge Code', 'Institution', 'Product', 'Qty Needed', 'Status', 'Created At'],
+        rows,
+    )
+
+
+@login_required
+def export_readings(request):
+    q = request.GET.get('q', '').strip()
+    qs = SensorReading.objects.select_related('fridge').order_by('-recorded_at')
+    if q:
+        qs = qs.filter(Q(fridge__fridge_code__icontains=q))
+    rows = [
+        (r.fridge.fridge_code, r.temperature, r.humidity, r.voltage,
+         'Yes' if r.door_open else 'No',
+         r.recorded_at.strftime('%Y-%m-%d %H:%M'))
+        for r in qs
+    ]
+    return _csv_response(
+        'sensor_readings.csv',
+        ['Fridge Code', 'Temperature (°C)', 'Humidity (%)', 'Voltage (V)', 'Door Open', 'Recorded At'],
+        rows,
+    )
+
+
+@login_required
+def export_alerts(request):
+    q               = request.GET.get('q', '').strip()
+    type_filter     = request.GET.get('type', '')
+    resolved_filter = request.GET.get('resolved', '')
+    qs = Alert.objects.select_related('fridge').order_by('-created_at')
+    if q:
+        qs = qs.filter(Q(fridge__fridge_code__icontains=q) | Q(message__icontains=q))
+    if type_filter:
+        qs = qs.filter(alert_type=type_filter)
+    if resolved_filter in ('0', '1'):
+        qs = qs.filter(resolved=(resolved_filter == '1'))
+    rows = [
+        (a.fridge.fridge_code, a.alert_type, a.message,
+         'Yes' if a.resolved else 'No',
+         a.created_at.strftime('%Y-%m-%d %H:%M'))
+        for a in qs
+    ]
+    return _csv_response(
+        'alerts.csv',
+        ['Fridge Code', 'Alert Type', 'Message', 'Resolved', 'Created At'],
+        rows,
+    )
+
+
+@login_required
+def export_transactions(request):
+    q             = request.GET.get('q', '').strip()
+    method_filter = request.GET.get('method', '')
+    qs = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')
+    if q:
+        qs = qs.filter(
+            Q(fridge__fridge_code__icontains=q) | Q(product__name__icontains=q)
+        )
+    if method_filter:
+        qs = qs.filter(payment_method=method_filter)
+    rows = [
+        (t.fridge.fridge_code, t.product.name, t.quantity,
+         t.amount, t.payment_method,
+         t.created_at.strftime('%Y-%m-%d %H:%M'))
+        for t in qs
+    ]
+    return _csv_response(
+        'transactions.csv',
+        ['Fridge Code', 'Product', 'Quantity', 'Amount', 'Payment Method', 'Created At'],
+        rows,
+    )

@@ -10,6 +10,26 @@
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search by fridge code or message…">
+        <select name="type" onchange="this.form.submit()">
+            <option value="" {% if not type_filter %}selected{% endif %}>All types</option>
+            <option value="high_temperature" {% if type_filter == 'high_temperature' %}selected{% endif %}>High Temp</option>
+            <option value="low_stock"        {% if type_filter == 'low_stock'        %}selected{% endif %}>Low Stock</option>
+            <option value="door_open"        {% if type_filter == 'door_open'        %}selected{% endif %}>Door Open</option>
+            <option value="power_fault"      {% if type_filter == 'power_fault'      %}selected{% endif %}>Power Fault</option>
+            <option value="motor_fault"      {% if type_filter == 'motor_fault'      %}selected{% endif %}>Motor Fault</option>
+        </select>
+        <select name="resolved" onchange="this.form.submit()">
+            <option value="" {% if resolved_filter == '' %}selected{% endif %}>All statuses</option>
+            <option value="0" {% if resolved_filter == '0' %}selected{% endif %}>Active only</option>
+            <option value="1" {% if resolved_filter == '1' %}selected{% endif %}>Resolved only</option>
+        </select>
+        <button type="submit" class="btn">Search</button>
+        {% if q or type_filter or resolved_filter %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_alerts' %}?q={{ q }}&type={{ type_filter }}&resolved={{ resolved_filter }}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} alert{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -22,7 +42,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for alert in alerts %}
+            {% for alert in page_obj %}
             <tr>
                 <td><span class="code-tag">{{ alert.fridge.fridge_code }}</span></td>
                 <td>
@@ -73,6 +93,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

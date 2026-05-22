@@ -10,6 +10,19 @@
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search by fridge code or product…">
+        <select name="status" onchange="this.form.submit()">
+            <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+            <option value="pending"  {% if status_filter == 'pending'  %}selected{% endif %}>Pending</option>
+            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+            <option value="delivered" {% if status_filter == 'delivered' %}selected{% endif %}>Delivered</option>
+        </select>
+        <button type="submit" class="btn">Search</button>
+        {% if q or status_filter %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_restock_orders' %}?q={{ q }}&status={{ status_filter }}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -22,7 +35,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for order in orders %}
+            {% for order in page_obj %}
             <tr>
                 <td><span class="code-tag">{{ order.fridge.fridge_code }}</span></td>
                 <td>{{ order.fridge.institution.name }}</td>
@@ -61,6 +74,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

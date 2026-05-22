@@ -13,6 +13,13 @@
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search by name, location, or contact…">
+        <button type="submit" class="btn">Search</button>
+        {% if q %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_institutions' %}{% if q %}?q={{ q }}{% endif %}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -24,7 +31,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for institution in institutions %}
+            {% for institution in page_obj %}
             <tr>
                 <td>{{ institution.name }}</td>
                 <td>{{ institution.location }}</td>
@@ -59,6 +66,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

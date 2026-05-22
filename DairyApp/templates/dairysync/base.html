@@ -66,7 +66,6 @@
         <div class="dropdown-content">
             <a href="{% url 'fridge_list' %}">View Fridges</a>
             <a href="{% url 'add_fridge' %}">Add Fridge</a>
-            <a href="{% url 'add_fridge_slot' %}">Add Fridge Slot</a>
         </div>
     </div>
 
@@ -96,7 +95,10 @@
         </button>
         <div class="dropdown-content">
             <a href="{% url 'stock_list' %}">Stock Levels</a>
+            <a href="{% url 'add_fridge_slot' %}">Add Fridge Slot</a>
             <a href="{% url 'restock_order_list' %}">Restock Orders</a>
+            <a href="{% url 'transaction_list' %}">Transactions</a>
+            <a href="{% url 'add_transaction' %}">Record Transaction</a>
             <a href="{% url 'ai_stock_prediction' %}">AI Stock Prediction</a>
         </div>
     </div>
@@ -130,6 +132,19 @@
     </a>
 
     <div class="sidebar-footer">
+        <div class="sidebar-profile">
+            <div class="sidebar-profile-avatar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#082b5f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="8" r="4"/>
+                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                </svg>
+            </div>
+            <div class="sidebar-profile-info">
+                <span class="sidebar-profile-name">{{ request.user.get_full_name|default:request.user.username }}</span>
+                <span class="sidebar-profile-role">{% if request.user.is_superuser %}Admin{% elif request.user.is_staff %}Staff{% else %}User{% endif %}</span>
+                <span class="sidebar-profile-email">{{ request.user.email|default:"No email set" }}</span>
+            </div>
+        </div>
         <form method="POST" action="{% url 'logout' %}">
             {% csrf_token %}
             <button type="submit" class="logout-btn">

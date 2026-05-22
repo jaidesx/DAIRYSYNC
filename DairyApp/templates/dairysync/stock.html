@@ -13,6 +13,13 @@
 </div>
 
 <div class="table-wrap">
+    <form class="filter-bar" method="get">
+        <input type="search" name="q" value="{{ q }}" placeholder="Search by fridge code or product…">
+        <button type="submit" class="btn">Search</button>
+        {% if q %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
+        <a href="{% url 'export_stock' %}{% if q %}?q={{ q }}{% endif %}" class="btn btn-success">Export CSV</a>
+        <span class="filter-count">{{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }}</span>
+    </form>
     <table>
         <thead>
             <tr>
@@ -22,10 +29,11 @@
                 <th>Slot</th>
                 <th>Current Stock</th>
                 <th>Status</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% for slot in slots %}
+            {% for slot in page_obj %}
             <tr>
                 <td><span class="code-tag">{{ slot.fridge.fridge_code }}</span></td>
                 <td>{{ slot.fridge.institution.name }}</td>
@@ -41,10 +49,19 @@
                         <span class="type-badge type-green">Sufficient</span>
                     {% endif %}
                 </td>
+                <td style="white-space:nowrap">
+                    <a class="btn" href="{% url 'edit_fridge_slot' slot.id %}">Edit</a>
+                    <form method="POST" action="{% url 'delete_fridge_slot' slot.id %}"
+                          style="display:inline"
+                          data-confirm="Delete Slot {{ slot.slot_number }} ({{ slot.fridge.fridge_code }})? Stock history for this slot will also be removed.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Delete</button>
+                    </form>
+                </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6" class="empty-state-cell">
+                <td colspan="7" class="empty-state-cell">
                     <div class="empty-state">
                         <div class="empty-state-icon">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -61,6 +78,7 @@
             {% endfor %}
         </tbody>
     </table>
+    {% include 'dairysync/_pagination.html' %}
 </div>
 
 {% endblock %}

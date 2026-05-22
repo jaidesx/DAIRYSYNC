@@ -21,11 +21,17 @@ urlpatterns = [
     path('add-institution/', views.add_institution, name='add_institution'),
     path('add-fridge/',      views.add_fridge,      name='add_fridge'),
     path('add-product/',     views.add_product,     name='add_product'),
-    path('add-fridge-slot/', views.add_fridge_slot, name='add_fridge_slot'),
+    path('add-fridge-slot/',          views.add_fridge_slot,   name='add_fridge_slot'),
+    path('fridge-slot/edit/<int:id>/', views.edit_fridge_slot,  name='edit_fridge_slot'),
+    path('fridge-slot/delete/<int:id>/', views.delete_fridge_slot, name='delete_fridge_slot'),
+    path('transactions/',             views.transaction_list,  name='transaction_list'),
+    path('transactions/add/',         views.add_transaction,   name='add_transaction'),
+    path('transactions/delete/<int:id>/', views.delete_transaction, name='delete_transaction'),
 
     # ── Edit / Delete ─────────────────────────────────────────
     path('institution/edit/<int:id>/',   views.edit_institution,   name='edit_institution'),
     path('institution/delete/<int:id>/', views.delete_institution, name='delete_institution'),
+    path('fridge/<int:id>/',             views.fridge_detail,      name='fridge_detail'),
     path('fridge/edit/<int:id>/',        views.edit_fridge,        name='edit_fridge'),
     path('fridge/delete/<int:id>/',      views.delete_fridge,      name='delete_fridge'),
     path('product/edit/<int:id>/',       views.edit_product,       name='edit_product'),
@@ -44,6 +50,16 @@ urlpatterns = [
     path('api/v1/dashboard-stats/',            views.dashboard_stats,            name='dashboard_stats'),
     path('api/v1/alert-count/',                views.alert_count,                name='alert_count'),
     path('api/v1/fridges/<int:id>/history/',   views.fridge_temperature_history, name='fridge_temperature_history'),
+
+    # ── CSV Exports ───────────────────────────────────────────
+    path('export/institutions/',  views.export_institutions,  name='export_institutions'),
+    path('export/fridges/',       views.export_fridges,       name='export_fridges'),
+    path('export/products/',      views.export_products,      name='export_products'),
+    path('export/stock/',         views.export_stock,         name='export_stock'),
+    path('export/restock-orders/',views.export_restock_orders,name='export_restock_orders'),
+    path('export/readings/',      views.export_readings,      name='export_readings'),
+    path('export/alerts/',        views.export_alerts,        name='export_alerts'),
+    path('export/transactions/',  views.export_transactions,  name='export_transactions'),
 
     # ── REST API (legacy) ─────────────────────────────────────
     path('api/fridges/',        views.api_fridges,        name='api_fridges'),

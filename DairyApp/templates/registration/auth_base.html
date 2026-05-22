@@ -4,14 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DAIRYSYNC — Login</title>
+    <title>DAIRYSYNC — {% block page_title %}Account{% endblock %}</title>
     <link rel="icon" type="image/png" href="{% static 'dairysync/images/synclogo.png' %}">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: Arial, sans-serif;
@@ -24,7 +20,6 @@
             overflow: hidden;
         }
 
-        /* Subtle grid background */
         body::before {
             content: '';
             position: fixed;
@@ -36,7 +31,6 @@
             z-index: 0;
         }
 
-        /* Glowing orb */
         body::after {
             content: '';
             position: fixed;
@@ -58,8 +52,7 @@
             padding: 20px;
         }
 
-        /* Card */
-        .login-card {
+        .auth-card {
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
@@ -67,7 +60,6 @@
             backdrop-filter: blur(20px);
         }
 
-        /* Logo + brand */
         .brand-header {
             display: flex;
             flex-direction: column;
@@ -77,9 +69,9 @@
         }
 
         .logo-wrap {
-            width: 82px;
-            height: 82px;
-            border-radius: 20px;
+            width: 66px;
+            height: 66px;
+            border-radius: 16px;
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid rgba(255, 255, 255, 0.12);
             display: flex;
@@ -88,55 +80,44 @@
             padding: 10px;
         }
 
-        .logo-wrap img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
+        .logo-wrap img { width: 100%; height: 100%; object-fit: contain; }
 
         .brand-name {
-            font-size: 26px;
+            font-size: 22px;
             font-weight: bold;
             letter-spacing: 2px;
             color: #ffffff;
             text-align: center;
         }
 
-        .brand-name span {
-            color: #3cda8c;
-        }
+        .brand-name span { color: #3cda8c; }
 
-        .brand-tagline {
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.38);
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            text-align: center;
-            margin-top: -8px;
-        }
-
-        /* Divider */
         .divider {
             height: 1px;
             background: rgba(255, 255, 255, 0.08);
             margin-bottom: 28px;
         }
 
-        /* Form */
-        .login-title {
+        .card-heading {
             font-size: 15px;
-            color: rgba(255, 255, 255, 0.5);
-            margin-bottom: 20px;
+            color: rgba(255, 255, 255, 0.75);
+            font-weight: bold;
+            margin-bottom: 8px;
             text-align: center;
-            letter-spacing: 0.3px;
         }
 
-        /* Django renders form.as_p — style the p, label, input */
-        .login-form p {
-            margin-bottom: 16px;
+        .card-subtext {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.38);
+            text-align: center;
+            margin-bottom: 24px;
+            line-height: 1.5;
         }
 
-        .login-form label {
+        /* Form elements */
+        .auth-form p { margin-bottom: 16px; }
+
+        .auth-form label {
             display: block;
             font-size: 12px;
             color: rgba(255, 255, 255, 0.55);
@@ -146,9 +127,9 @@
             font-weight: bold;
         }
 
-        .login-form input[type="text"],
-        .login-form input[type="password"],
-        .login-form input[type="email"] {
+        .auth-form input[type="text"],
+        .auth-form input[type="password"],
+        .auth-form input[type="email"] {
             width: 100%;
             padding: 13px 16px;
             background: rgba(255, 255, 255, 0.07);
@@ -161,17 +142,14 @@
             font-family: inherit;
         }
 
-        .login-form input:focus {
+        .auth-form input:focus {
             border-color: #3cda8c;
             background: rgba(60, 218, 140, 0.06);
             box-shadow: 0 0 0 3px rgba(60, 218, 140, 0.12);
         }
 
-        .login-form input::placeholder {
-            color: rgba(255, 255, 255, 0.2);
-        }
+        .auth-form input::placeholder { color: rgba(255, 255, 255, 0.2); }
 
-        /* Error messages from Django */
         .errorlist {
             list-style: none;
             padding: 0;
@@ -188,20 +166,7 @@
             margin-bottom: 6px;
         }
 
-        /* Non-field errors */
-        .non-field-errors {
-            background: rgba(220, 38, 38, 0.12);
-            border: 1px solid rgba(220, 38, 38, 0.3);
-            color: #fca5a5;
-            font-size: 13px;
-            padding: 10px 14px;
-            border-radius: 8px;
-            margin-bottom: 18px;
-            text-align: center;
-        }
-
-        /* Login button */
-        .login-btn {
+        .auth-btn {
             width: 100%;
             padding: 14px;
             background: #082b5f;
@@ -213,23 +178,41 @@
             border-radius: 10px;
             cursor: pointer;
             margin-top: 6px;
-            transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+            transition: background 0.2s, box-shadow 0.2s;
             font-family: inherit;
-            position: relative;
-            overflow: hidden;
         }
 
-        .login-btn:hover {
+        .auth-btn:hover {
             background: #0f4c9c;
             box-shadow: 0 0 24px rgba(60, 218, 140, 0.18);
         }
 
-        .login-btn:active {
-            transform: scale(0.99);
+        .success-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(60, 218, 140, 0.12);
+            border: 1px solid rgba(60, 218, 140, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            color: #3cda8c;
         }
 
-        /* Footer note */
-        .login-footer {
+        .auth-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.38);
+            text-decoration: none;
+        }
+
+        .auth-link a { color: #3cda8c; text-decoration: none; }
+        .auth-link a:hover { text-decoration: underline; }
+
+        .auth-footer {
             text-align: center;
             margin-top: 24px;
             font-size: 11px;
@@ -237,61 +220,33 @@
             letter-spacing: 0.4px;
         }
 
-        .login-footer span {
-            color: rgba(60, 218, 140, 0.5);
-        }
+        .auth-footer span { color: rgba(60, 218, 140, 0.5); }
 
-        /* Responsive */
         @media (max-width: 480px) {
-            .login-card {
-                padding: 30px 22px 28px;
-            }
+            .auth-card { padding: 30px 22px 28px; }
         }
     </style>
 </head>
 <body>
-
 <div class="page-wrap">
-    <div class="login-card">
+    <div class="auth-card">
 
-        <!-- Brand Header -->
         <div class="brand-header">
             <div class="logo-wrap">
                 <img src="{% static 'dairysync/images/synclogo.png' %}" alt="DAIRYSYNC Logo">
             </div>
-            <div>
-                <div class="brand-name">DAIRY<span>SYNC</span></div>
-                <div class="brand-tagline">IoT-Enabled Smart Fridge System</div>
-            </div>
+            <div class="brand-name">DAIRY<span>SYNC</span></div>
         </div>
 
         <div class="divider"></div>
 
-        <div class="login-title">Sign in to your account</div>
+        {% block card_content %}{% endblock %}
 
-        <!-- Non-field errors -->
-        {% if form.non_field_errors %}
-        <div class="non-field-errors">
-            {% for error in form.non_field_errors %}{{ error }}{% endfor %}
-        </div>
-        {% endif %}
-
-        <form method="POST" class="login-form">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="login-btn">LOGIN</button>
-        </form>
-
-        <div style="text-align:center;margin-top:16px;font-size:13px;color:rgba(255,255,255,0.38)">
-            <a href="/accounts/password_reset/" style="color:#3cda8c;text-decoration:none">Forgot password?</a>
-        </div>
-
-        <div class="login-footer">
+        <div class="auth-footer">
             Protected system &nbsp;·&nbsp; <span>DAIRYSYNC &copy; 2025</span>
         </div>
 
     </div>
 </div>
-
 </body>
 </html>

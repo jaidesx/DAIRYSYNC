@@ -4,9 +4,25 @@
 
 <div class="topbar">
     <div class="topbar-left">
-        <h1>AI Stock Prediction</h1>
-        <p>Forecasts which products may need restocking soon</p>
+        <h1>Stock Prediction</h1>
+        <p>Linear regression forecast based on historical stock readings</p>
     </div>
+</div>
+
+<!-- Legend -->
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    <span style="font-size:12px;color:#6b7280">
+        <span class="type-badge type-red" style="margin-right:4px">Critical</span> ≤ 2 days or already depleted
+    </span>
+    <span style="font-size:12px;color:#6b7280">
+        <span class="type-badge type-amber" style="margin-right:4px">Warning</span> 3–7 days remaining
+    </span>
+    <span style="font-size:12px;color:#6b7280">
+        <span class="type-badge type-green" style="margin-right:4px">Stable</span> > 7 days or not declining
+    </span>
+    <span style="font-size:12px;color:#6b7280">
+        <span class="type-badge type-gray" style="margin-right:4px">No data</span> fewer than 3 readings
+    </span>
 </div>
 
 <div class="table-wrap">
@@ -15,9 +31,14 @@
             <tr>
                 <th>Fridge</th>
                 <th>Product</th>
-                <th>Current Stock</th>
-                <th>Min Stock</th>
-                <th>Prediction</th>
+                <th>Stock</th>
+                <th>Trend</th>
+                <th>Daily Rate</th>
+                <th>Days Left</th>
+                <th>Est. Depletion</th>
+                <th>R² Fit</th>
+                <th>Readings</th>
+                <th>Status</th>
             </tr>
         </thead>
         <tbody>
@@ -25,29 +46,90 @@
             <tr>
                 <td><span class="code-tag">{{ item.fridge }}</span></td>
                 <td>{{ item.product }}</td>
-                <td>{{ item.current_stock }}</td>
-                <td>{{ item.minimum_stock }}</td>
+                <td>{{ item.current_stock }} / {{ item.minimum_stock }}</td>
+
+                <!-- Trend -->
                 <td>
-                    {% if item.prediction == 'Stock likely to run out soon' %}
-                        <span class="type-badge type-red">{{ item.prediction }}</span>
-                    {% elif item.prediction == 'Stock reducing, prepare restock' %}
-                        <span class="type-badge type-amber">{{ item.prediction }}</span>
-                    {% elif item.prediction == 'Stock is stable' %}
-                        <span class="type-badge type-green">{{ item.prediction }}</span>
+                    {% if item.trend == 'declining' %}
+                        <span style="color:#dc2626">↓ Declining</span>
+                    {% elif item.trend == 'increasing' %}
+                        <span style="color:#16a34a">↑ Increasing</span>
+                    {% elif item.trend == 'stable' %}
+                        <span style="color:#6b7280">→ Stable</span>
                     {% else %}
-                        <span class="type-badge type-gray">{{ item.prediction }}</span>
+                        <span class="muted-text">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Daily rate -->
+                <td>
+                    {% if item.daily_rate is not None %}
+                        {{ item.daily_rate }} units/day
+                    {% else %}
+                        <span class="muted-text">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Days until stockout -->
+                <td>
+                    {% if item.days_until_stockout is not None %}
+                        {% if item.days_until_stockout == 0 %}
+                            <span style="color:#dc2626;font-weight:bold">Now</span>
+                        {% else %}
+                            <span {% if item.days_until_stockout <= 2 %}style="color:#dc2626;font-weight:bold"{% elif item.days_until_stockout <= 7 %}style="color:#b45309;font-weight:bold"{% endif %}>
+                                {{ item.days_until_stockout }}d
+                            </span>
+                        {% endif %}
+                    {% else %}
+                        <span class="muted-text">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Depletion date -->
+                <td class="muted-text">
+                    {% if item.depletion_date %}
+                        {{ item.depletion_date|date:"d M Y" }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+
+                <!-- R² -->
+                <td>
+                    {% if item.r2 is not None %}
+                        <span title="How well the trend line fits the data (1.0 = perfect)">
+                            {{ item.r2 }}
+                        </span>
+                    {% else %}
+                        <span class="muted-text">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Reading count -->
+                <td class="muted-text">{{ item.reading_count }}</td>
+
+                <!-- Status badge -->
+                <td>
+                    {% if item.status == 'critical' %}
+                        <span class="type-badge type-red">Critical</span>
+                    {% elif item.status == 'warning' %}
+                        <span class="type-badge type-amber">Warning</span>
+                    {% elif item.status == 'stable' %}
+                        <span class="type-badge type-green">Stable</span>
+                    {% else %}
+                        <span class="type-badge type-gray">No data</span>
                     {% endif %}
                 </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5" class="empty-state-cell">
+                <td colspan="10" class="empty-state-cell">
                     <div class="empty-state">
                         <div class="empty-state-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                         </div>
                         <div class="empty-state-title">No prediction data available</div>
-                        <div class="empty-state-desc">Predictions appear once fridge slots have at least 2 stock readings recorded.</div>
+                        <div class="empty-state-desc">Predictions appear once fridge slots have at least 3 stock readings recorded by the ESP32.</div>
                     </div>
                 </td>
             </tr>
