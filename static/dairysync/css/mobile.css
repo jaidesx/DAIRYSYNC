@@ -1,0 +1,305 @@
+/* ================================
+   DAIRYSYNC MOBILE RESPONSIVENESS
+   Location: static/dairysync/css/mobile.css
+   Add <link> for this in base.html after style.css
+================================ */
+
+
+/* ===========================
+   HAMBURGER BUTTON
+   Fixed top-left on mobile,
+   hidden on desktop
+=========================== */
+
+.hamburger {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 1100;
+    width: 42px;
+    height: 42px;
+    background: #082b5f;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    transition: background 0.2s;
+}
+
+.hamburger:hover {
+    background: #0f4c9c;
+}
+
+.hamburger span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: #ffffff;
+    border-radius: 2px;
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    transform-origin: center;
+}
+
+/* Animate to X when open */
+.hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+
+/* ===========================
+   SIDEBAR OVERLAY
+   Dark backdrop behind open sidebar
+=========================== */
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1050;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.sidebar-overlay.visible {
+    opacity: 1;
+}
+
+
+/* ===========================
+   TABLE SCROLL WRAPPER
+   Wrap every table in this div
+   to allow horizontal scroll
+   without breaking page layout
+=========================== */
+
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    margin-top: 15px;
+}
+
+.table-wrap table {
+    margin-top: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    min-width: 600px; /* prevents columns collapsing too small */
+}
+
+
+/* ===========================
+   MOBILE TOPBAR OFFSET
+   Push topbar down so hamburger
+   doesn't overlap the title
+=========================== */
+
+.mobile-topbar-spacer {
+    display: none;
+}
+
+
+/* ===========================
+   RESPONSIVE BREAKPOINTS
+=========================== */
+
+/* ── Tablet (≤900px) ── */
+@media (max-width: 900px) {
+
+    /* Show hamburger button */
+    .hamburger {
+        display: flex;
+    }
+
+    /* Show overlay element (visibility toggled by JS) */
+    .sidebar-overlay {
+        display: block;
+    }
+
+    /* Sidebar slides off-screen to the left by default */
+    .sidebar {
+        position: fixed !important;
+        left: -260px;
+        top: 0;
+        height: 100vh;
+        width: 255px;
+        transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1060;
+        overflow-y: auto;
+    }
+
+    /* Sidebar slides in when .open is added by JS */
+    .sidebar.open {
+        left: 0;
+    }
+
+    /* Main content fills full width */
+    .main {
+        margin-left: 0 !important;
+        padding: 70px 16px 20px; /* top pad leaves room for hamburger */
+    }
+
+    /* Topbar adjusts for hamburger */
+    .topbar {
+        padding: 14px 16px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .topbar-left h1 {
+        font-size: 17px;
+    }
+
+    /* Cards — 2 columns on tablet */
+    .cards {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    /* Card values slightly smaller */
+    .card-value {
+        font-size: 26px;
+    }
+
+    /* Form box full width */
+    .form-box {
+        max-width: 100%;
+    }
+}
+
+
+/* ── Phone (≤480px) ── */
+@media (max-width: 480px) {
+
+    .main {
+        padding: 64px 12px 16px;
+    }
+
+    /* Cards — 2 columns still, but smaller min */
+    .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .card {
+        padding: 14px 12px;
+    }
+
+    .card-value {
+        font-size: 22px;
+    }
+
+    .card h3 {
+        font-size: 11px;
+    }
+
+    .card-sub {
+        font-size: 11px;
+    }
+
+    /* Topbar stacks vertically */
+    .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .topbar-right {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    /* Buttons — minimum 44px touch target */
+    .btn,
+    .submit-btn,
+    .empty-state-btn,
+    .logout-btn,
+    button[type="submit"] {
+        min-height: 44px;
+        padding: 10px 16px;
+        font-size: 14px;
+    }
+
+    /* Action buttons in table rows — keep compact but still 44px height */
+    .table-wrap .btn {
+        min-height: 36px;
+        padding: 7px 10px;
+        font-size: 12px;
+    }
+
+    /* Nav links in sidebar — larger tap targets */
+    .nav-link,
+    .dropdown-btn {
+        padding: 14px 18px;
+        min-height: 48px;
+    }
+
+    .dropdown-content a {
+        padding: 12px 18px 12px 40px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Chart panel height reduction */
+    .chart-wrap {
+        height: 180px;
+    }
+
+    /* Hide non-essential topbar text */
+    .refresh-note {
+        display: none;
+    }
+
+    /* Panels padding tighter */
+    .panel,
+    .chart-panel {
+        padding: 14px 12px;
+    }
+
+    /* Form inputs larger touch targets */
+    input,
+    select,
+    textarea,
+    .field input,
+    .field select,
+    .field textarea {
+        padding: 13px 14px;
+        font-size: 16px; /* prevents iOS zoom on focus */
+    }
+
+    /* Alert badge in sidebar */
+    .alert-badge {
+        font-size: 10px;
+        padding: 1px 6px;
+    }
+
+    /* Section labels smaller */
+    .nav-section-label {
+        font-size: 9px;
+        padding: 12px 16px 4px;
+    }
+}
+
+
+/* ── Very small phones (≤360px) ── */
+@media (max-width: 360px) {
+
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+    .card-value {
+        font-size: 28px;
+    }
+}

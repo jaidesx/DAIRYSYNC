@@ -3,20 +3,45 @@
 {% block content %}
 
 <div class="topbar">
-    <h1>{{ title }}</h1>
+    <div class="topbar-left">
+        <h1>{{ title }}</h1>
+    </div>
+    <div class="topbar-right">
+        <a href="javascript:history.back()" style="font-size:13px;color:#6b7280;text-decoration:none;">
+            ← Back
+        </a>
+    </div>
 </div>
 
 <div class="form-box">
 
-    <form method="POST">
+    {% if form.non_field_errors %}
+    <div class="form-error-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>{% for error in form.non_field_errors %}{{ error }}{% endfor %}</div>
+    </div>
+    {% endif %}
 
+    {% for message in messages %}
+        {% if 'success' in message.tags %}
+        <div class="form-success-banner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div>{{ message }}</div>
+        </div>
+        {% endif %}
+    {% endfor %}
+
+    <form id="main-form" method="POST" data-validate-form>
         {% csrf_token %}
 
         {{ form.as_p }}
 
-        <button type="submit">
-            Save
-        </button>
+        <div style="margin-top: 8px;">
+            <button type="submit" class="submit-btn">
+                <span class="btn-text">Save</span>
+                <div class="btn-spinner"></div>
+            </button>
+        </div>
 
     </form>
 

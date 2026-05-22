@@ -1,56 +1,66 @@
 {% extends 'dairysync/base.html' %}
-
+{# ── Save as: DairyApp/templates/dairysync/stock.html ── #}
 {% block content %}
 
 <div class="topbar">
-    <h1>Stock Levels</h1>
+    <div class="topbar-left">
+        <h1>Stock Levels</h1>
+        <p>Current stock across all fridge slots</p>
+    </div>
+    <div class="topbar-right">
+        <a class="btn" href="{% url 'add_fridge_slot' %}">+ Add Slot</a>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Fridge</th>
-        <th>Institution</th>
-        <th>Product</th>
-        <th>Slot</th>
-        <th>Current Stock</th>
-        <th>Status</th>
-    </tr>
-
-    {% for slot in slots %}
-
-    <tr>
-
-        <td>{{ slot.fridge.fridge_code }}</td>
-
-        <td>{{ slot.fridge.institution.name }}</td>
-
-        <td>{{ slot.product.name }}</td>
-
-        <td>{{ slot.slot_number }}</td>
-
-        <td>{{ slot.current_stock }}</td>
-
-        <td>
-
-            {% if slot.current_stock <= slot.product.minimum_stock %}
-                <span class="status-offline">Low Stock</span>
-            {% else %}
-                <span class="status-online">Enough</span>
-            {% endif %}
-
-        </td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="6">No stock data found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Fridge</th>
+                <th>Institution</th>
+                <th>Product</th>
+                <th>Slot</th>
+                <th>Current Stock</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for slot in slots %}
+            <tr>
+                <td><span class="code-tag">{{ slot.fridge.fridge_code }}</span></td>
+                <td>{{ slot.fridge.institution.name }}</td>
+                <td>{{ slot.product.name }}</td>
+                <td>{{ slot.slot_number }}</td>
+                <td>{{ slot.current_stock }}</td>
+                <td>
+                    {% if slot.current_stock <= slot.product.minimum_stock %}
+                        <span class="type-badge type-red">Low Stock</span>
+                    {% elif slot.current_stock <= slot.product.minimum_stock|add:5 %}
+                        <span class="type-badge type-amber">Running Low</span>
+                    {% else %}
+                        <span class="type-badge type-green">Sufficient</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        </div>
+                        <div class="empty-state-title">No stock data yet</div>
+                        <div class="empty-state-desc">Add fridge slots and assign products to begin tracking stock.</div>
+                        <a class="empty-state-btn" href="{% url 'add_fridge_slot' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Add Fridge Slot
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

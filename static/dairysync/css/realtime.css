@@ -1,0 +1,79 @@
+
+
+/* ── Stat card value flash on update ── */
+@keyframes stat-flash {
+    0%   { opacity: 0.3; transform: scale(0.95); }
+    60%  { opacity: 1;   transform: scale(1.06); }
+    100% { opacity: 1;   transform: scale(1); }
+}
+
+.stat-flash {
+    animation: stat-flash 0.4s ease forwards;
+}
+
+/* ── Notification enable button ── */
+#enable-notifications-btn {
+    font-size: 12px;
+    padding: 6px 12px;
+    background: #f0f4f8;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#enable-notifications-btn:hover {
+    background: #e5e7eb;
+}
+
+/* Hide button if notifications already granted — set by JS */
+#enable-notifications-btn.granted {
+    display: none;
+}
+
+/* ── Live connection indicator enhancement ── */
+.live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: #dcfce7;
+    color: #166534;
+    transition: background 0.3s, color 0.3s;
+}
+
+.live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #16a34a;
+    animation: pulse 1.8s infinite;
+    transition: background 0.3s;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* ── Fridge selector dropdown ── */
+#fridge-selector {
+    font-size: 13px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    background: #f9fafb;
+    color: #374151;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+#fridge-selector:focus {
+    outline: none;
+    border-color: #082b5f;
+    box-shadow: 0 0 0 3px rgba(8, 43, 95, 0.1);
+}

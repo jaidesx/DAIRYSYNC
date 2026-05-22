@@ -47,7 +47,57 @@ ALLOWED_HOSTS = os.getenv(
     "127.0.0.1,localhost"
 ).split(",")
 
+REST_FRAMEWORK = {
+    # JWT as the default authentication method
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',  # keeps Django admin working
+    ],
 
+    # All endpoints require login by default
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+
+    # Pagination — 20 results per page
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+
+    # Throttling — rate limits
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/minute',
+        'user': '300/minute',
+    },
+
+    # Auto schema for drf-spectacular
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+
+# JWT token settings — add this block to settings.py
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME':  timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS':  True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+
+# drf-spectacular settings — add this block
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'DAIRYSYNC API',
+    'DESCRIPTION': 'REST API for the DAIRYSYNC IoT Smart Fridge Monitoring System',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+}
 # Application definition
 
 INSTALLED_APPS = [
@@ -59,6 +109,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     #Third_partyApps
     'rest_framework',
+    'axes',
     #My Apps
     'DairyApp',
 ]
@@ -69,6 +120,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'axes.middleware.AxesMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -102,6 +154,127 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# ── Authentication backends ─────────────────────────────────
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',   # ✅ ADD THIS — axes backend first
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+
+# ── Session & Cookie Security ───────────────────────────────
+
+# Session expires after 2 hours of inactivity
+SESSION_COOKIE_AGE = 60 * 60 * 2          # 2 hours in seconds
+
+# Session expires when browser is closed
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
+# Only send session cookie over HTTPS (set True in production)
+SESSION_COOKIE_SECURE = not DEBUG
+
+# Prevent JS from reading session cookie (XSS protection)
+SESSION_COOKIE_HTTPONLY = True
+
+# CSRF cookie — only over HTTPS in production
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = True
+
+
+# ── HTTPS & Security Headers ────────────────────────────────
+# Set these True only in production (when DEBUG=False)
+
+# Redirect all HTTP to HTTPS
+SECURE_SSL_REDIRECT = not DEBUG
+
+# Tell browsers to only use HTTPS for 1 year
+SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+
+# Prevent browsers from guessing content type
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Enable browser XSS filter
+SECURE_BROWSER_XSS_FILTER = True
+
+# Prevent site from being loaded in an iframe (clickjacking)
+X_FRAME_OPTIONS = 'DENY'
+
+# Referrer policy
+SECURE_REFERRER_POLICY = 'same-origin'
+
+
+# ── django-axes (Login Rate Limiting) ───────────────────────
+# pip install django-axes
+
+# Lock account after 3 failed attempts
+AXES_FAILURE_LIMIT = 3
+
+# Lockout period: 15 minutes
+AXES_COOLOFF_TIME = 0.25   # hours (0.25 = 15 minutes)
+
+# Lock by IP address + username combination
+AXES_LOCKOUT_PARAMETERS = ['ip_address', 'username']
+
+# Show a lockout message
+AXES_LOCKOUT_TEMPLATE = 'dairysync/lockout.html'
+
+# Reset failure count on successful login
+AXES_RESET_ON_SUCCESS = True
+
+# ── REST Framework ──────────────────────────────────────────
+REST_FRAMEWORK = {
+    # Require authentication for all API endpoints by default
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    # Throttle anonymous and authenticated users
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/minute',
+        'user': '300/minute',
+    }
+}
+
+
+# ── ESP32 API Key ───────────────────────────────────────────
+# Set this as an environment variable — never hardcode in source
+ESP32_API_KEY = os.environ.get('ESP32_API_KEY', 'change-this-secret-key-in-production')
+
+
+# ── Logging (track login failures) ─────────────────────────
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'WARNING',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs' / 'security.log',
+        },
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'axes': {
+            'handlers': ['file', 'console'],
+            'level': 'WARNING',
+        },
+        'django.security': {
+            'handlers': ['file', 'console'],
+            'level': 'WARNING',
+        },
+    },
+}
+
 
 
 # Password validation

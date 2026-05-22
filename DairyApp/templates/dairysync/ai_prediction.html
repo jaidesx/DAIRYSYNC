@@ -3,32 +3,57 @@
 {% block content %}
 
 <div class="topbar">
-    <h1>AI Stock Prediction</h1>
-    <p>Predicts which products may need restocking soon.</p>
+    <div class="topbar-left">
+        <h1>AI Stock Prediction</h1>
+        <p>Forecasts which products may need restocking soon</p>
+    </div>
 </div>
 
-<table>
-    <tr>
-        <th>Fridge</th>
-        <th>Product</th>
-        <th>Current Stock</th>
-        <th>Minimum Stock</th>
-        <th>Prediction</th>
-    </tr>
-
-    {% for item in predictions %}
-    <tr>
-        <td>{{ item.fridge }}</td>
-        <td>{{ item.product }}</td>
-        <td>{{ item.current_stock }}</td>
-        <td>{{ item.minimum_stock }}</td>
-        <td>{{ item.prediction }}</td>
-    </tr>
-    {% empty %}
-    <tr>
-        <td colspan="5">No prediction data available</td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Fridge</th>
+                <th>Product</th>
+                <th>Current Stock</th>
+                <th>Min Stock</th>
+                <th>Prediction</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in predictions %}
+            <tr>
+                <td><span class="code-tag">{{ item.fridge }}</span></td>
+                <td>{{ item.product }}</td>
+                <td>{{ item.current_stock }}</td>
+                <td>{{ item.minimum_stock }}</td>
+                <td>
+                    {% if item.prediction == 'Stock likely to run out soon' %}
+                        <span class="type-badge type-red">{{ item.prediction }}</span>
+                    {% elif item.prediction == 'Stock reducing, prepare restock' %}
+                        <span class="type-badge type-amber">{{ item.prediction }}</span>
+                    {% elif item.prediction == 'Stock is stable' %}
+                        <span class="type-badge type-green">{{ item.prediction }}</span>
+                    {% else %}
+                        <span class="type-badge type-gray">{{ item.prediction }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                        </div>
+                        <div class="empty-state-title">No prediction data available</div>
+                        <div class="empty-state-desc">Predictions appear once fridge slots have at least 2 stock readings recorded.</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

@@ -1,0 +1,617 @@
+/* ================================
+   DAIRYSYNC UI COMPONENTS
+   Location: static/dairysync/css/ui-components.css
+   Covers:
+     1. Skeleton / loading screens
+     2. Empty states
+     3. Form validation
+     4. Toast notifications
+================================ */
+
+
+/* ===========================
+   1. SKELETON LOADING
+=========================== */
+
+@keyframes shimmer {
+    0%   { background-position: -700px 0; }
+    100% { background-position:  700px 0; }
+}
+
+.skeleton {
+    background: #e5e7eb;
+    background-image: linear-gradient(
+        90deg,
+        #e5e7eb 0px,
+        #f3f4f6 40px,
+        #e5e7eb 80px
+    );
+    background-size: 700px 100%;
+    animation: shimmer 1.4s infinite linear;
+    border-radius: 6px;
+    display: block;
+}
+
+/* Skeleton shapes */
+.skeleton-text       { height: 14px; margin-bottom: 8px; }
+.skeleton-text.short { width: 40%; }
+.skeleton-text.med   { width: 65%; }
+.skeleton-text.full  { width: 100%; }
+.skeleton-title      { height: 22px; width: 55%; margin-bottom: 14px; border-radius: 6px; }
+.skeleton-badge      { height: 24px; width: 80px; border-radius: 20px; display: inline-block; }
+.skeleton-btn        { height: 36px; width: 90px; border-radius: 8px; display: inline-block; }
+.skeleton-circle     { border-radius: 50%; }
+.skeleton-card-icon  { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
+
+/* Skeleton stat card */
+.skeleton-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.skeleton-card-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+/* Skeleton table */
+.skeleton-table {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+.skeleton-table-header {
+    background: #082b5f;
+    padding: 13px 16px;
+    display: flex;
+    gap: 20px;
+}
+
+.skeleton-table-header .skeleton {
+    background: rgba(255,255,255,0.15);
+    background-image: linear-gradient(
+        90deg,
+        rgba(255,255,255,0.1) 0px,
+        rgba(255,255,255,0.25) 40px,
+        rgba(255,255,255,0.1) 80px
+    );
+    background-size: 700px 100%;
+    height: 14px;
+}
+
+.skeleton-table-row {
+    display: flex;
+    gap: 20px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    align-items: center;
+}
+
+.skeleton-table-row:last-child {
+    border-bottom: none;
+}
+
+/* Skeleton cards grid */
+.skeleton-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+/* Loading overlay for existing content */
+.loading-overlay {
+    position: relative;
+    pointer-events: none;
+}
+
+.loading-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.7);
+    border-radius: 12px;
+    z-index: 10;
+}
+
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #082b5f;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Page-level loader bar (top of screen) */
+.page-loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    background: #3cda8c;
+    z-index: 9999;
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(60, 218, 140, 0.6);
+}
+
+.page-loader.loading { width: 70%; }
+.page-loader.done    { width: 100%; opacity: 0; transition: width 0.2s ease, opacity 0.4s ease 0.1s; }
+
+
+/* ===========================
+   2. EMPTY STATES
+=========================== */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 56px 24px;
+    text-align: center;
+}
+
+.empty-state-icon {
+    width: 72px;
+    height: 72px;
+    background: #f0f4f8;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    border: 1px solid #e5e7eb;
+}
+
+.empty-state-icon svg {
+    width: 34px;
+    height: 34px;
+    color: #9ca3af;
+    stroke: #9ca3af;
+}
+
+.empty-state-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #1f2937;
+    margin-bottom: 8px;
+}
+
+.empty-state-desc {
+    font-size: 14px;
+    color: #6b7280;
+    max-width: 320px;
+    line-height: 1.6;
+    margin-bottom: 22px;
+}
+
+.empty-state-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #082b5f;
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.empty-state-btn:hover {
+    background: #0f4c9c;
+}
+
+.empty-state-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+}
+
+/* Empty state inside table — full-width row */
+td.empty-state-cell {
+    padding: 0 !important;
+    border: none !important;
+}
+
+.empty-state-cell .empty-state {
+    padding: 48px 24px;
+}
+
+
+/* ===========================
+   3. FORM VALIDATION
+=========================== */
+
+/* Field wrapper — always wrap label+input in this */
+.field {
+    margin-bottom: 18px;
+}
+
+.field label {
+    display: block;
+    font-size: 13px;
+    color: #374151;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.field label .required-star {
+    color: #dc2626;
+    margin-left: 3px;
+}
+
+/* Input states */
+.field input,
+.field select,
+.field textarea {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #f9fafb;
+    color: #1f2937;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    font-family: inherit;
+    margin: 0;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    border-color: #082b5f;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(8, 43, 95, 0.1);
+}
+
+/* Valid state */
+.field.valid input,
+.field.valid select,
+.field.valid textarea {
+    border-color: #16a34a;
+    background: #f0fdf4;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
+}
+
+/* Invalid state */
+.field.invalid input,
+.field.invalid select,
+.field.invalid textarea {
+    border-color: #dc2626;
+    background: #fff5f5;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+/* Helper text below input */
+.field-hint {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 5px;
+    display: block;
+}
+
+/* Inline error message */
+.field-error {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #b91c1c;
+    margin-top: 5px;
+    font-weight: 500;
+}
+
+.field-error svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+    flex-shrink: 0;
+}
+
+.field.invalid .field-error {
+    display: flex;
+}
+
+/* Inline success tick */
+.field-success {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #15803d;
+    margin-top: 5px;
+    font-weight: 500;
+}
+
+.field-success svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+    flex-shrink: 0;
+}
+
+.field.valid .field-success {
+    display: flex;
+}
+
+/* Icon inside input (right side) */
+.field-input-wrap {
+    position: relative;
+}
+
+.field-input-wrap input {
+    padding-right: 40px;
+}
+
+.field-input-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    display: none;
+}
+
+.field-input-icon.icon-valid   { stroke: #16a34a; }
+.field-input-icon.icon-invalid { stroke: #dc2626; }
+
+.field.valid   .icon-valid   { display: block; }
+.field.invalid .icon-invalid { display: block; }
+
+/* Form submit button with loading state */
+.submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #082b5f;
+    color: #ffffff;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: inherit;
+    transition: background 0.2s, transform 0.1s, opacity 0.2s;
+    min-width: 130px;
+}
+
+.submit-btn:hover:not(:disabled) {
+    background: #0f4c9c;
+}
+
+.submit-btn:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.submit-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.submit-btn .btn-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+}
+
+.submit-btn.loading .btn-text   { display: none; }
+.submit-btn.loading .btn-spinner { display: block; }
+
+/* Django form.as_p error styling */
+.errorlist {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 4px 0;
+}
+
+.errorlist li {
+    font-size: 12px;
+    color: #b91c1c;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.errorlist li::before {
+    content: '⚠';
+    font-size: 11px;
+}
+
+/* Non-field errors banner */
+.form-error-banner {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    border-left: 4px solid #dc2626;
+    color: #7f1d1d;
+    font-size: 13px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-error-banner svg {
+    width: 18px;
+    height: 18px;
+    stroke: #dc2626;
+    flex-shrink: 0;
+}
+
+/* Form success banner */
+.form-success-banner {
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    border-left: 4px solid #16a34a;
+    color: #14532d;
+    font-size: 13px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-success-banner svg {
+    width: 18px;
+    height: 18px;
+    stroke: #16a34a;
+    flex-shrink: 0;
+}
+
+
+/* ===========================
+   4. TOAST NOTIFICATIONS
+=========================== */
+
+#toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 14px 16px;
+    border-radius: 10px;
+    min-width: 280px;
+    max-width: 380px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    pointer-events: all;
+    border-left: 4px solid transparent;
+
+    /* Enter animation */
+    animation: toast-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.toast.toast-exit {
+    animation: toast-out 0.25s ease forwards;
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateX(60px) scale(0.95); }
+    to   { opacity: 1; transform: translateX(0)    scale(1); }
+}
+
+@keyframes toast-out {
+    from { opacity: 1; transform: translateX(0)    scale(1); max-height: 100px; margin-bottom: 0; }
+    to   { opacity: 0; transform: translateX(60px) scale(0.95); max-height: 0;   margin-bottom: -10px; }
+}
+
+/* Toast types */
+.toast-success { border-left-color: #3cda8c; }
+.toast-error   { border-left-color: #f87171; }
+.toast-warning { border-left-color: #fbbf24; }
+.toast-info    { border-left-color: #60a5fa; }
+
+.toast-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.toast-success .toast-icon { stroke: #3cda8c; }
+.toast-error   .toast-icon { stroke: #f87171; }
+.toast-warning .toast-icon { stroke: #fbbf24; }
+.toast-info    .toast-icon { stroke: #60a5fa; }
+
+.toast-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.toast-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #f9fafb;
+    margin-bottom: 2px;
+}
+
+.toast-message {
+    font-size: 12px;
+    color: rgba(249, 250, 251, 0.65);
+    line-height: 1.4;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.4);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: -1px;
+    transition: color 0.15s;
+}
+
+.toast-close:hover {
+    color: #ffffff;
+}
+
+/* Toast progress bar */
+.toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    border-radius: 0 0 10px 10px;
+    animation: toast-progress linear forwards;
+}
+
+.toast {
+    position: relative;
+    overflow: hidden;
+}
+
+.toast-success .toast-progress { background: #3cda8c; }
+.toast-error   .toast-progress { background: #f87171; }
+.toast-warning .toast-progress { background: #fbbf24; }
+.toast-info    .toast-progress { background: #60a5fa; }
+
+@keyframes toast-progress {
+    from { width: 100%; }
+    to   { width: 0%; }
+}

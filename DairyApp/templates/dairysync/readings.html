@@ -1,56 +1,69 @@
 {% extends 'dairysync/base.html' %}
-
+{# ── Save as: DairyApp/templates/dairysync/readings.html ── #}
 {% block content %}
 
 <div class="topbar">
-    <h1>Sensor Readings</h1>
+    <div class="topbar-left">
+        <h1>Sensor Readings</h1>
+        <p>Latest 50 readings from all fridges</p>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Fridge</th>
-        <th>Temperature</th>
-        <th>Humidity</th>
-        <th>Voltage</th>
-        <th>Door</th>
-        <th>Date</th>
-    </tr>
-
-    {% for reading in readings %}
-
-    <tr>
-
-        <td>{{ reading.fridge.fridge_code }}</td>
-
-        <td>{{ reading.temperature }} °C</td>
-
-        <td>{{ reading.humidity }}%</td>
-
-        <td>{{ reading.voltage }}V</td>
-
-        <td>
-
-            {% if reading.door_open %}
-                Open
-            {% else %}
-                Closed
-            {% endif %}
-
-        </td>
-
-        <td>{{ reading.recorded_at }}</td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="6">No readings found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Fridge</th>
+                <th>Temperature</th>
+                <th>Humidity</th>
+                <th>Voltage</th>
+                <th>Door</th>
+                <th>Recorded At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for reading in readings %}
+            <tr>
+                <td><span class="code-tag">{{ reading.fridge.fridge_code }}</span></td>
+                <td>
+                    {% if reading.temperature > 8 %}
+                        <span style="color:#b91c1c;font-weight:bold">{{ reading.temperature }} °C ⚠</span>
+                    {% else %}
+                        {{ reading.temperature }} °C
+                    {% endif %}
+                </td>
+                <td>{{ reading.humidity }}%</td>
+                <td>
+                    {% if reading.voltage < 11 %}
+                        <span style="color:#b45309;font-weight:bold">{{ reading.voltage }}V ⚠</span>
+                    {% else %}
+                        {{ reading.voltage }}V
+                    {% endif %}
+                </td>
+                <td>
+                    {% if reading.door_open %}
+                        <span class="type-badge type-red">Open</span>
+                    {% else %}
+                        <span class="type-badge type-green">Closed</span>
+                    {% endif %}
+                </td>
+                <td class="muted-text">{{ reading.recorded_at|date:"d M Y H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        </div>
+                        <div class="empty-state-title">No readings yet</div>
+                        <div class="empty-state-desc">Sensor readings appear here once your ESP32 devices start transmitting data.</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

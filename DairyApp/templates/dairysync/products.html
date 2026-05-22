@@ -1,61 +1,62 @@
 {% extends 'dairysync/base.html' %}
-
+{# Save as: DairyApp/templates/dairysync/products.html #}
 {% block content %}
 
 <div class="topbar">
-
-    <h1>Products</h1>
-
-    <a class="btn" href="{% url 'add_product' %}">
-        Add Product
-    </a>
-
+    <div class="topbar-left">
+        <h1>Products</h1>
+        <p>Manage tracked dairy products</p>
+    </div>
+    <div class="topbar-right">
+        <a class="btn" href="{% url 'add_product' %}">+ Add Product</a>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Name</th>
-        <th>Price</th>
-        <th>Minimum Stock</th>
-        <th>Actions</th>
-    </tr>
-
-    {% for product in products %}
-
-    <tr>
-
-        <td>{{ product.name }}</td>
-
-        <td>{{ product.price }}</td>
-
-        <td>{{ product.minimum_stock }}</td>
-
-        <td>
-
-            <a class="btn"
-               href="{% url 'edit_product' product.id %}">
-               Edit
-            </a>
-
-            <a class="btn"
-               onclick="return confirm('Delete product?')"
-               href="{% url 'delete_product' product.id %}">
-               Delete
-            </a>
-
-        </td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="4">No products found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Price</th>
+                <th>Min Stock</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>{{ product.name }}</td>
+                <td>{{ product.price }}</td>
+                <td>{{ product.minimum_stock }}</td>
+                <td style="white-space:nowrap">
+                    <a class="btn" href="{% url 'edit_product' product.id %}">Edit</a>
+                    <form method="POST" action="{% url 'delete_product' product.id %}"
+                          style="display:inline"
+                          data-confirm="Delete {{ product.name }}? This cannot be undone.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                        </div>
+                        <div class="empty-state-title">No products added yet</div>
+                        <div class="empty-state-desc">Add products to start tracking stock levels.</div>
+                        <a class="empty-state-btn" href="{% url 'add_product' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Add Product
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

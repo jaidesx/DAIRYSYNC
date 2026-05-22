@@ -3,67 +3,76 @@
 {% block content %}
 
 <div class="topbar">
-    <h1>System Alerts</h1>
+    <div class="topbar-left">
+        <h1>System Alerts</h1>
+        <p>Monitor and resolve active system alerts</p>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Fridge</th>
-        <th>Alert Type</th>
-        <th>Message</th>
-        <th>Status</th>
-        <th>Date</th>
-        <th>Actions</th>
-    </tr>
-
-    {% for alert in alerts %}
-
-    <tr>
-
-        <td>{{ alert.fridge.fridge_code }}</td>
-
-        <td>{{ alert.alert_type }}</td>
-
-        <td>{{ alert.message }}</td>
-
-        <td>
-
-            {% if alert.resolved %}
-                Resolved
-            {% else %}
-                Active
-            {% endif %}
-
-        </td>
-
-        <td>{{ alert.created_at }}</td>
-
-        <td>
-
-            {% if not alert.resolved %}
-
-                <a class="btn"
-                   href="{% url 'resolve_alert' alert.id %}">
-                   Resolve
-                </a>
-
-            {% else %}
-                Resolved
-            {% endif %}
-
-        </td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="6">No alerts found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Fridge</th>
+                <th>Type</th>
+                <th>Message</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alert in alerts %}
+            <tr>
+                <td><span class="code-tag">{{ alert.fridge.fridge_code }}</span></td>
+                <td>
+                    {% if alert.alert_type == 'high_temperature' %}
+                        <span class="type-badge type-red">High Temp</span>
+                    {% elif alert.alert_type == 'low_stock' %}
+                        <span class="type-badge type-amber">Low Stock</span>
+                    {% elif alert.alert_type == 'door_open' %}
+                        <span class="type-badge type-blue">Door Open</span>
+                    {% elif alert.alert_type == 'power_fault' %}
+                        <span class="type-badge type-amber">Power Fault</span>
+                    {% else %}
+                        <span class="type-badge type-gray">{{ alert.alert_type }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ alert.message }}</td>
+                <td>
+                    {% if alert.resolved %}
+                        <span class="type-badge type-green">Resolved</span>
+                    {% else %}
+                        <span class="type-badge type-red">Active</span>
+                    {% endif %}
+                </td>
+                <td class="muted-text">{{ alert.created_at|date:"d M Y H:i" }}</td>
+                <td>
+                    {% if not alert.resolved %}
+                        <form method="POST" action="{% url 'resolve_alert' alert.id %}" style="display:inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn">Resolve</button>
+                        </form>
+                    {% else %}
+                        <span style="color:#9ca3af;font-size:13px">Done</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        </div>
+                        <div class="empty-state-title">No alerts — all systems normal</div>
+                        <div class="empty-state-desc">Alerts are generated automatically when thresholds are exceeded.</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

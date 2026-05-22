@@ -1,67 +1,292 @@
+{% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-
-    <title>DAIRYSYNC Login</title>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAIRYSYNC — Login</title>
+    <link rel="icon" type="image/png" href="{% static 'dairysync/images/synclogo.png' %}">
     <style>
-
-        body{
-            font-family:Arial;
-            background:#082b5f;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .login-box{
-            width:400px;
-            background:white;
-            margin:120px auto;
-            padding:30px;
-            border-radius:12px;
+        body {
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            background: #060f1e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
         }
 
-        h1{
-            text-align:center;
-            margin-bottom:25px;
-            color:#082b5f;
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(8, 43, 95, 0.6) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(8, 43, 95, 0.6) 1px, transparent 1px);
+            background-size: 48px 48px;
+            z-index: 0;
         }
 
-        input{
-            width:100%;
-            padding:12px;
-            margin-bottom:15px;
+        /* Glowing orb */
+        body::after {
+            content: '';
+            position: fixed;
+            top: -160px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 700px;
+            height: 500px;
+            background: radial-gradient(ellipse, rgba(8, 80, 180, 0.35) 0%, transparent 70%);
+            z-index: 0;
+            pointer-events: none;
         }
 
-        button{
-            width:100%;
-            padding:12px;
-            background:#082b5f;
-            color:white;
-            border:none;
-            cursor:pointer;
+        .page-wrap {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 440px;
+            padding: 20px;
         }
 
+        /* Card */
+        .login-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px 38px 36px;
+            backdrop-filter: blur(20px);
+        }
+
+        /* Logo + brand */
+        .brand-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 32px;
+            gap: 14px;
+        }
+
+        .logo-wrap {
+            width: 82px;
+            height: 82px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+        }
+
+        .logo-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .brand-name {
+            font-size: 26px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #ffffff;
+            text-align: center;
+        }
+
+        .brand-name span {
+            color: #3cda8c;
+        }
+
+        .brand-tagline {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.38);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            text-align: center;
+            margin-top: -8px;
+        }
+
+        /* Divider */
+        .divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            margin-bottom: 28px;
+        }
+
+        /* Form */
+        .login-title {
+            font-size: 15px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 20px;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        /* Django renders form.as_p — style the p, label, input */
+        .login-form p {
+            margin-bottom: 16px;
+        }
+
+        .login-form label {
+            display: block;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.55);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        .login-form input[type="text"],
+        .login-form input[type="password"],
+        .login-form input[type="email"] {
+            width: 100%;
+            padding: 13px 16px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            font-family: inherit;
+        }
+
+        .login-form input:focus {
+            border-color: #3cda8c;
+            background: rgba(60, 218, 140, 0.06);
+            box-shadow: 0 0 0 3px rgba(60, 218, 140, 0.12);
+        }
+
+        .login-form input::placeholder {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Error messages from Django */
+        .errorlist {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px 0;
+        }
+
+        .errorlist li {
+            background: rgba(220, 38, 38, 0.15);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+            color: #fca5a5;
+            font-size: 13px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+        }
+
+        /* Non-field errors */
+        .non-field-errors {
+            background: rgba(220, 38, 38, 0.12);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+            color: #fca5a5;
+            font-size: 13px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 18px;
+            text-align: center;
+        }
+
+        /* Login button */
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: #082b5f;
+            border: 1px solid rgba(60, 218, 140, 0.4);
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 0.8px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 6px;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+            font-family: inherit;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-btn:hover {
+            background: #0f4c9c;
+            box-shadow: 0 0 24px rgba(60, 218, 140, 0.18);
+        }
+
+        .login-btn:active {
+            transform: scale(0.99);
+        }
+
+        /* Footer note */
+        .login-footer {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.2);
+            letter-spacing: 0.4px;
+        }
+
+        .login-footer span {
+            color: rgba(60, 218, 140, 0.5);
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 30px 22px 28px;
+            }
+        }
     </style>
-
 </head>
-
 <body>
 
-<div class="login-box">
+<div class="page-wrap">
+    <div class="login-card">
 
-    <h1>DAIRYSYNC LOGIN</h1>
+        <!-- Brand Header -->
+        <div class="brand-header">
+            <div class="logo-wrap">
+                <img src="{% static 'dairysync/images/synclogo.png' %}" alt="DAIRYSYNC Logo">
+            </div>
+            <div>
+                <div class="brand-name">DAIRY<span>SYNC</span></div>
+                <div class="brand-tagline">IoT-Enabled Smart Fridge System</div>
+            </div>
+        </div>
 
-    <form method="POST">
+        <div class="divider"></div>
 
-        {% csrf_token %}
+        <div class="login-title">Sign in to your account</div>
 
-        {{ form.as_p }}
+        <!-- Non-field errors -->
+        {% if form.non_field_errors %}
+        <div class="non-field-errors">
+            {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
 
-        <button type="submit">
-            Login
-        </button>
+        <form method="POST" class="login-form">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="login-btn">LOGIN</button>
+        </form>
 
-    </form>
+        <div class="login-footer">
+            Protected system &nbsp;·&nbsp; <span>DAIRYSYNC &copy; 2025</span>
+        </div>
 
+    </div>
 </div>
 
 </body>

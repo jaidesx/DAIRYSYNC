@@ -3,62 +3,62 @@
 {% block content %}
 
 <div class="topbar">
-
-    <h1>Institutions</h1>
-
-    <a class="btn" href="{% url 'add_institution' %}">
-        Add Institution
-    </a>
-
+    <div class="topbar-left">
+        <h1>Institutions</h1>
+        <p>Manage registered institutions</p>
+    </div>
+    <div class="topbar-right">
+        <a class="btn" href="{% url 'add_institution' %}">+ Add Institution</a>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Name</th>
-        <th>Location</th>
-        <th>Contact Person</th>
-        <th>Phone</th>
-        <th>Actions</th>
-    </tr>
-
-    {% for institution in institutions %}
-
-    <tr>
-
-        <td>{{ institution.name }}</td>
-
-        <td>{{ institution.location }}</td>
-
-        <td>{{ institution.contact_person }}</td>
-
-        <td>{{ institution.phone }}</td>
-
-        <td>
-
-            <a class="btn"
-               href="{% url 'edit_institution' institution.id %}">
-               Edit
-            </a>
-
-            <a class="btn"
-               onclick="return confirm('Delete institution?')"
-               href="{% url 'delete_institution' institution.id %}">
-               Delete
-            </a>
-
-        </td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="5">No institutions found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Location</th>
+                <th>Contact Person</th>
+                <th>Phone</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for institution in institutions %}
+            <tr>
+                <td>{{ institution.name }}</td>
+                <td>{{ institution.location }}</td>
+                <td>{{ institution.contact_person }}</td>
+                <td>{{ institution.phone }}</td>
+                <td style="white-space:nowrap">
+                    <a class="btn" href="{% url 'edit_institution' institution.id %}">Edit</a>
+                    <form method="POST" action="{% url 'delete_institution' institution.id %}"
+                          style="display:inline"
+                          data-confirm="Delete {{ institution.name }}? All fridges linked to this institution will be affected.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
+                        </div>
+                        <div class="empty-state-title">No institutions added yet</div>
+                        <div class="empty-state-desc">Add an institution to start registering fridges.</div>
+                        <a class="empty-state-btn" href="{% url 'add_institution' %}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Add Institution
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

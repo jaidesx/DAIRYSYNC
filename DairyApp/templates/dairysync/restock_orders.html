@@ -1,61 +1,66 @@
 {% extends 'dairysync/base.html' %}
-
+{# ── Save as: DairyApp/templates/dairysync/restock_orders.html ── #}
 {% block content %}
 
 <div class="topbar">
-    <h1>Restock Orders</h1>
+    <div class="topbar-left">
+        <h1>Restock Orders</h1>
+        <p>Pending and approved restock requests</p>
+    </div>
 </div>
 
-<table>
-
-    <tr>
-        <th>Fridge</th>
-        <th>Institution</th>
-        <th>Product</th>
-        <th>Quantity Needed</th>
-        <th>Status</th>
-        <th>Actions</th>
-    </tr>
-
-    {% for order in orders %}
-
-    <tr>
-
-        <td>{{ order.fridge.fridge_code }}</td>
-
-        <td>{{ order.fridge.institution.name }}</td>
-
-        <td>{{ order.product.name }}</td>
-
-        <td>{{ order.quantity_needed }}</td>
-
-        <td>{{ order.status }}</td>
-
-        <td>
-
-            {% if order.status == 'pending' %}
-
-                <a class="btn"
-                   href="{% url 'approve_order' order.id %}">
-                   Approve
-                </a>
-
-            {% else %}
-                Approved
-            {% endif %}
-
-        </td>
-
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="6">No restock orders found</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Fridge</th>
+                <th>Institution</th>
+                <th>Product</th>
+                <th>Qty Needed</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><span class="code-tag">{{ order.fridge.fridge_code }}</span></td>
+                <td>{{ order.fridge.institution.name }}</td>
+                <td>{{ order.product.name }}</td>
+                <td>{{ order.quantity_needed }}</td>
+                <td>
+                    {% if order.status == 'pending' %}
+                        <span class="type-badge type-amber">Pending</span>
+                    {% else %}
+                        <span class="type-badge type-green">Approved</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if order.status == 'pending' %}
+                        <form method="POST" action="{% url 'approve_order' order.id %}" style="display:inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success">Approve</button>
+                        </form>
+                    {% else %}
+                        <span style="color:#9ca3af;font-size:13px">Done</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="empty-state-cell">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                        </div>
+                        <div class="empty-state-title">No restock orders yet</div>
+                        <div class="empty-state-desc">Restock orders are generated automatically when stock falls below minimum levels.</div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 {% endblock %}

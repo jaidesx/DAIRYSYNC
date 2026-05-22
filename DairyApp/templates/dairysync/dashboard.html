@@ -3,120 +3,230 @@
 {% block content %}
 
 <div class="topbar">
-    <h1>DAIRYSYNC Dashboard</h1>
-    <p>IoT Smart Fridge Monitoring System</p>
+    <div class="topbar-left">
+        <h1>Dashboard</h1>
+        <p>IoT Smart Fridge Monitoring System</p>
+    </div>
+    <div class="topbar-right">
+        <span class="live-badge">
+            <span class="live-dot"></span> Live
+        </span>
+        <span class="refresh-note">Updates every 15s</span>
+
+        {# Notification permission button — hidden once granted #}
+        {% if not request.user.is_anonymous %}
+        <button id="enable-notifications-btn"
+                class="btn"
+                style="font-size:12px;padding:6px 12px"
+                title="Enable browser alerts for new fridge issues">
+            🔔 Enable Alerts
+        </button>
+        {% endif %}
+    </div>
 </div>
 
+{# ── Stat Cards ── #}
 <div class="cards">
 
-    <div class="card">
+    <div class="card" data-stat="total-fridges">
+        <div class="card-icon card-icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        </div>
         <h3>Total Fridges</h3>
-        <p>{{ total_fridges }}</p>
+        {# id used by realtime.js to update value without page reload #}
+        <p class="card-value" id="stat-total-fridges">{{ total_fridges }}</p>
+        <span class="card-sub">Registered units</span>
     </div>
 
-    <div class="card">
+    <div class="card card-success" data-stat="online-fridges">
+        <div class="card-icon card-icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        </div>
         <h3>Online Fridges</h3>
-        <p>{{ online_fridges }}</p>
+        <p class="card-value card-value-green" id="stat-online-fridges">{{ online_fridges }}</p>
+        <span class="card-sub">Currently connected</span>
     </div>
 
-    <div class="card">
+    <div class="card card-danger" data-stat="offline-fridges">
+        <div class="card-icon card-icon-red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        </div>
         <h3>Offline Fridges</h3>
-        <p>{{ offline_fridges }}</p>
+        <p class="card-value card-value-red" id="stat-offline-fridges">{{ offline_fridges }}</p>
+        <span class="card-sub">No connection</span>
     </div>
 
-    <div class="card">
+    <div class="card card-warn" data-stat="faulty-fridges">
+        <div class="card-icon card-icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
         <h3>Faulty Fridges</h3>
-        <p>{{ faulty_fridges }}</p>
+        <p class="card-value card-value-amber" id="stat-faulty-fridges">{{ faulty_fridges }}</p>
+        <span class="card-sub">Needs attention</span>
     </div>
 
-    <div class="card">
+    <div class="card" data-stat="total-products">
+        <div class="card-icon card-icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
         <h3>Products</h3>
-        <p>{{ total_products }}</p>
+        <p class="card-value" id="stat-total-products">{{ total_products }}</p>
+        <span class="card-sub">Tracked items</span>
     </div>
 
-    <div class="card">
-        <h3>Alerts</h3>
-        <p>{{ active_alerts }}</p>
+    <div class="card {% if active_alerts > 0 %}card-danger{% endif %}" data-stat="active-alerts">
+        <div class="card-icon card-icon-red">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </div>
+        <h3>Active Alerts</h3>
+        <p class="card-value {% if active_alerts > 0 %}card-value-red{% endif %}" id="stat-active-alerts">{{ active_alerts }}</p>
+        <span class="card-sub">Unresolved alerts</span>
     </div>
 
-    <div class="card">
+    <div class="card {% if pending_orders > 0 %}card-warn{% endif %}" data-stat="pending-orders">
+        <div class="card-icon card-icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
         <h3>Pending Orders</h3>
-        <p>{{ pending_orders }}</p>
+        <p class="card-value {% if pending_orders > 0 %}card-value-amber{% endif %}" id="stat-pending-orders">{{ pending_orders }}</p>
+        <span class="card-sub">Awaiting approval</span>
     </div>
 
 </div>
 
-<div class="card">
-
-    <h2>Fridge Status Chart</h2>
-
-    <canvas id="fridgeChart"
-        data-online="{{ online_fridges }}"
-        data-offline="{{ offline_fridges }}"
-        data-faulty="{{ faulty_fridges }}">
-    </canvas>
-
+{# ── Fridge Status Bar Chart ── #}
+<div class="chart-panel" style="margin-bottom:20px">
+    <div class="panel-header">
+        <h2 class="panel-title">Fridge Status Overview</h2>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="fridgeChart"
+            data-online="{{ online_fridges }}"
+            data-offline="{{ offline_fridges }}"
+            data-faulty="{{ faulty_fridges }}"
+            role="img"
+            aria-label="Bar chart showing online, offline, and faulty fridge counts">
+            Online: {{ online_fridges }}, Offline: {{ offline_fridges }}, Faulty: {{ faulty_fridges }}.
+        </canvas>
+    </div>
 </div>
 
+{# ── Temperature History Chart ── #}
+{% if fridges %}
+<div class="chart-panel" style="margin-bottom:20px">
+    <div class="panel-header">
+        <h2 class="panel-title">Temperature & Humidity History</h2>
+        <select id="fridge-selector" style="font-size:13px;padding:5px 10px;border-radius:6px;border:1px solid #d1d5db;background:#f9fafb">
+            {% for fridge in fridges %}
+            <option value="{{ fridge.id }}">{{ fridge.fridge_code }} — {{ fridge.institution.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="chart-wrap" style="height:240px">
+        {# data-fridge-id read by realtime.js to fetch history for this fridge #}
+        <canvas id="tempHistoryChart"
+                data-fridge-id="{{ fridges.0.id }}"
+                role="img"
+                aria-label="Line chart showing temperature and humidity history">
+        </canvas>
+    </div>
+</div>
+{% endif %}
+
+{# ── Recent Alerts Table ── #}
+<div class="panel">
+    <div class="panel-header">
+        <h2 class="panel-title">Recent Active Alerts</h2>
+        <a class="panel-link" href="{% url 'alert_list' %}">View all →</a>
+    </div>
+
+    <div class="table-wrap" style="margin-top:0">
+        <table>
+            <thead>
+                <tr>
+                    <th>Fridge</th>
+                    <th>Type</th>
+                    <th>Message</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            {# tbody id used by realtime.js to update rows #}
+            <tbody id="recent-alerts-tbody">
+                {% for alert in recent_alerts %}
+                <tr>
+                    <td><span class="code-tag">{{ alert.fridge.fridge_code }}</span></td>
+                    <td>
+                        {% if alert.alert_type == 'high_temperature' %}
+                            <span class="type-badge type-red">High Temp</span>
+                        {% elif alert.alert_type == 'low_stock' %}
+                            <span class="type-badge type-amber">Low Stock</span>
+                        {% elif alert.alert_type == 'door_open' %}
+                            <span class="type-badge type-blue">Door Open</span>
+                        {% elif alert.alert_type == 'power_fault' %}
+                            <span class="type-badge type-amber">Power Fault</span>
+                        {% else %}
+                            <span class="type-badge type-gray">{{ alert.alert_type }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ alert.message }}</td>
+                    <td class="muted-text">{{ alert.created_at|date:"d M Y H:i" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="empty-row">No active alerts — all systems normal</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{# ── Status Bar Chart Script ── #}
 <script>
+(function () {
+    const ctx     = document.getElementById('fridgeChart');
+    const online  = parseInt(ctx.dataset.online)  || 0;
+    const offline = parseInt(ctx.dataset.offline) || 0;
+    const faulty  = parseInt(ctx.dataset.faulty)  || 0;
 
-const ctx = document.getElementById('fridgeChart');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels:   ['Online', 'Offline', 'Faulty'],
+            datasets: [{
+                label:           'Fridges',
+                data:            [online, offline, faulty],
+                backgroundColor: ['#15803d', '#b91c1c', '#b45309'],
+                borderRadius:    6,
+                barThickness:    52,
+            }],
+        },
+        options: {
+            responsive:          true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend:  { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.raw} fridges` } },
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 13 } } },
+                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#6b7280', stepSize: 1 } },
+            },
+        },
+    });
 
-const onlineFridges  = parseInt(ctx.dataset.online)  || 0;
-const offlineFridges = parseInt(ctx.dataset.offline) || 0;
-const faultyFridges  = parseInt(ctx.dataset.faulty)  || 0;
+    // Fridge selector — switch history chart fridge
+    const selector = document.getElementById('fridge-selector');
+    const canvas   = document.getElementById('tempHistoryChart');
 
-new Chart(ctx, {
-    type: 'bar',
-
-    data: {
-        labels: ['Online', 'Offline', 'Faulty'],
-
-        datasets: [{
-            label: 'Fridge Status',
-
-            data: [onlineFridges, offlineFridges, faultyFridges]
-        }]
+    if (selector && canvas) {
+        selector.addEventListener('change', function () {
+            canvas.dataset.fridgeId = this.value;
+            // Trigger history reload via custom event
+            canvas.dispatchEvent(new CustomEvent('fridge-changed', { detail: { fridgeId: this.value } }));
+        });
     }
-});
-
-</script>
-
-<br>
-
-<h2>Recent Alerts</h2>
-
-<table>
-
-    <tr>
-        <th>Fridge</th>
-        <th>Type</th>
-        <th>Message</th>
-        <th>Date</th>
-    </tr>
-
-    {% for alert in recent_alerts %}
-
-    <tr>
-        <td>{{ alert.fridge.fridge_code }}</td>
-        <td>{{ alert.alert_type }}</td>
-        <td>{{ alert.message }}</td>
-        <td>{{ alert.created_at }}</td>
-    </tr>
-
-    {% empty %}
-
-    <tr>
-        <td colspan="4">No alerts</td>
-    </tr>
-
-    {% endfor %}
-
-</table>
-<script>
-    setTimeout(function(){
-        window.location.reload();
-    }, 30000);
+})();
 </script>
 
 {% endblock %}

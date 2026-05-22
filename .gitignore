@@ -171,4 +171,4 @@ logs/
 *.crt
 *.csr
 gunicorn.pid
-supervisor.sock
+supervisor.socklogs/
