@@ -9,6 +9,8 @@ from .models import (
     Transaction,
     RestockOrder,
     Alert,
+    NotificationPreference,
+    Feedback,
 )
 
 
@@ -101,3 +103,28 @@ class AlertAdmin(admin.ModelAdmin):
     @admin.action(description='Mark selected alerts as Resolved')
     def mark_resolved(self, request, queryset):
         queryset.update(resolved=True)
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display  = ['user', 'email_enabled', 'sms_enabled', 'custom_email', 'custom_phone']
+    list_filter   = ['email_enabled', 'sms_enabled']
+    search_fields = ['user__username', 'user__email', 'custom_email', 'custom_phone']
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display  = ['subject', 'category', 'user', 'status', 'created_at']
+    list_filter   = ['category', 'status']
+    search_fields = ['subject', 'message', 'user__username']
+    readonly_fields = ['user', 'category', 'subject', 'message', 'created_at']
+    ordering      = ['-created_at']
+    actions       = ['mark_reviewed', 'mark_resolved']
+
+    @admin.action(description='Mark selected as Reviewed')
+    def mark_reviewed(self, request, queryset):
+        queryset.update(status='reviewed')
+
+    @admin.action(description='Mark selected as Resolved')
+    def mark_resolved(self, request, queryset):
+        queryset.update(status='resolved')

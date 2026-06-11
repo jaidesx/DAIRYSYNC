@@ -44,8 +44,10 @@
                 <td>
                     {% if order.status == 'pending' %}
                         <span class="type-badge type-amber">Pending</span>
+                    {% elif order.status == 'approved' %}
+                        <span class="type-badge type-blue">Approved</span>
                     {% else %}
-                        <span class="type-badge type-green">Approved</span>
+                        <span class="type-badge type-green">Delivered</span>
                     {% endif %}
                 </td>
                 <td>
@@ -54,8 +56,13 @@
                             {% csrf_token %}
                             <button type="submit" class="btn btn-success">Approve</button>
                         </form>
+                    {% elif order.status == 'approved' %}
+                        <form method="POST" action="{% url 'deliver_order' order.id %}" style="display:inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn">Mark Delivered</button>
+                        </form>
                     {% else %}
-                        <span style="color:#9ca3af;font-size:13px">Done</span>
+                        <span style="color:#9ca3af;font-size:13px">Delivered</span>
                     {% endif %}
                 </td>
             </tr>

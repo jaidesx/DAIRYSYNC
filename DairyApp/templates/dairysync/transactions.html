@@ -20,6 +20,10 @@
             <option value="cashless" {% if method_filter == 'cashless' %}selected{% endif %}>Cashless</option>
             <option value="manual"   {% if method_filter == 'manual'   %}selected{% endif %}>Manual</option>
         </select>
+        <select name="voided" onchange="this.form.submit()">
+            <option value="0" {% if voided_filter == '0' or voided_filter == '' %}selected{% endif %}>Active only</option>
+            <option value="1" {% if voided_filter == '1' %}selected{% endif %}>Voided only</option>
+        </select>
         <button type="submit" class="btn">Search</button>
         {% if q or method_filter %}<a href="?" class="btn btn-danger">Clear</a>{% endif %}
         <a href="{% url 'export_transactions' %}?q={{ q }}&method={{ method_filter }}" class="btn btn-success">Export CSV</a>
@@ -40,11 +44,17 @@
         </thead>
         <tbody>
             {% for txn in page_obj %}
-            <tr>
+            <tr {% if txn.voided %}style="opacity:0.55"{% endif %}>
                 <td><span class="code-tag">{{ txn.fridge.fridge_code }}</span></td>
                 <td>{{ txn.product.name }}</td>
                 <td>{{ txn.quantity }}</td>
-                <td>{{ txn.amount }}</td>
+                <td>
+                    {% if txn.voided %}
+                        <s>{{ txn.amount }}</s>
+                    {% else %}
+                        {{ txn.amount }}
+                    {% endif %}
+                </td>
                 <td>
                     {% if txn.payment_method == 'cashless' %}
                         <span class="type-badge type-blue">Cashless</span>
@@ -54,12 +64,22 @@
                 </td>
                 <td class="muted-text">{{ txn.created_at|date:"d M Y H:i" }}</td>
                 <td>
-                    <form method="POST" action="{% url 'delete_transaction' txn.id %}"
-                          style="display:inline"
-                          data-confirm="Delete this transaction record? This cannot be undone.">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-danger">Delete</button>
-                    </form>
+                    {% if txn.voided %}
+                        <span class="type-badge type-gray">Voided</span>
+                        {% if txn.voided_at %}
+                        <div class="muted-text" style="font-size:11px;margin-top:2px">
+                            {{ txn.voided_at|date:"d M H:i" }}
+                            {% if txn.voided_by %} by {{ txn.voided_by.username }}{% endif %}
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <form method="POST" action="{% url 'void_transaction' txn.id %}"
+                              style="display:inline"
+                              data-confirm="Void this transaction? It will be preserved in records as voided.">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-danger">Void</button>
+                        </form>
+                    {% endif %}
                 </td>
             </tr>
             {% empty %}

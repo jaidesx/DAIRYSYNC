@@ -1,0 +1,67 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <div class="topbar-left">
+        <h1>Send Feedback</h1>
+        <p>Report a bug, suggest an improvement, or share your thoughts</p>
+    </div>
+</div>
+
+<div class="pref-layout">
+    <div class="pref-section">
+        <div class="pref-section-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <div>
+                <h2>Your Feedback</h2>
+                <p>We read every submission and use it to improve DAIRYSYNC</p>
+            </div>
+        </div>
+
+        <div class="pref-card">
+            <form method="POST">
+                {% csrf_token %}
+
+                <div class="fb-category-row">
+                    {% for radio in form.category %}
+                    <label class="fb-category-btn">
+                        {{ radio.tag }}
+                        <span>
+                            {% if radio.choice_value == 'bug' %}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h8M8 6a4 4 0 0 0-4 4v2a8 8 0 0 0 16 0v-2a4 4 0 0 0-4-4M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 14v-3M14 14v-3"/></svg>
+                            {% elif radio.choice_value == 'suggestion' %}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            {% else %}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            {% endif %}
+                            {{ radio.choice_label }}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <div class="fb-field">
+                    <label for="{{ form.subject.id_for_label }}">Subject</label>
+                    {{ form.subject }}
+                </div>
+
+                <div class="fb-field">
+                    <label for="{{ form.message.id_for_label }}">Message</label>
+                    {{ form.message }}
+                </div>
+
+                <div class="pref-actions">
+                    <button type="submit" class="btn btn-pref-save">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        Submit Feedback
+                    </button>
+                    <a href="{% url 'dashboard' %}" class="btn" style="background:#6b7280">Cancel</a>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

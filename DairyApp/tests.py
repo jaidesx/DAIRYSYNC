@@ -187,6 +187,7 @@ class FridgeCRUDTests(BaseFixture):
     def test_add_fridge(self):
         response = self.client.post(reverse('add_fridge'), {
             'fridge_code': 'F999', 'institution': self.institution.id,
+            'temp_threshold': 6.0,
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Fridge.objects.filter(fridge_code='F999').exists())
@@ -195,6 +196,7 @@ class FridgeCRUDTests(BaseFixture):
         # temperature and status should be ignored (not in FridgeForm.fields)
         self.client.post(reverse('add_fridge'), {
             'fridge_code': 'FHACK', 'institution': self.institution.id,
+            'temp_threshold': 6.0,
             'temperature': 99, 'status': 'faulty',
         })
         f = Fridge.objects.get(fridge_code='FHACK')
@@ -377,15 +379,18 @@ class TransactionTests(BaseFixture):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Transaction.objects.count(), 2)
 
-    def test_delete_transaction(self):
+    def test_void_transaction(self):
         response = self.client.post(
-            reverse('delete_transaction', args=[self.txn.id]))
+            reverse('void_transaction', args=[self.txn.id]))
         self.assertEqual(response.status_code, 302)
-        self.assertFalse(Transaction.objects.filter(id=self.txn.id).exists())
+        self.txn.refresh_from_db()
+        self.assertTrue(self.txn.voided)
+        # Record is preserved — not deleted
+        self.assertTrue(Transaction.objects.filter(id=self.txn.id).exists())
 
-    def test_delete_transaction_requires_post(self):
+    def test_void_transaction_requires_post(self):
         response = self.client.get(
-            reverse('delete_transaction', args=[self.txn.id]))
+            reverse('void_transaction', args=[self.txn.id]))
         self.assertEqual(response.status_code, 405)
 
 

@@ -1,0 +1,72 @@
+{% extends 'dairysync/base.html' %}
+
+{% block content %}
+
+<div class="topbar">
+    <div class="topbar-left">
+        <h1>User Feedback</h1>
+        <p>{{ feedbacks|length }} submission{{ feedbacks|length|pluralize }} received</p>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="table-wrap" style="margin-top:0">
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Subject</th>
+                    <th>User</th>
+                    <th>Message</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for fb in feedbacks %}
+                <tr>
+                    <td>
+                        {% if fb.category == 'bug' %}
+                            <span class="type-badge type-red">Bug</span>
+                        {% elif fb.category == 'suggestion' %}
+                            <span class="type-badge type-blue">Suggestion</span>
+                        {% else %}
+                            <span class="type-badge type-gray">General</span>
+                        {% endif %}
+                    </td>
+                    <td><strong>{{ fb.subject }}</strong></td>
+                    <td>{{ fb.user.username|default:"Anonymous" }}</td>
+                    <td style="max-width:280px;white-space:normal;word-break:break-word;font-size:13px;color:#374151">{{ fb.message|truncatechars:120 }}</td>
+                    <td class="muted-text">{{ fb.created_at|date:"d M Y H:i" }}</td>
+                    <td>
+                        {% if fb.status == 'open' %}
+                            <span class="type-badge type-amber">Open</span>
+                        {% elif fb.status == 'reviewed' %}
+                            <span class="type-badge type-blue">Reviewed</span>
+                        {% else %}
+                            <span class="type-badge type-green">Resolved</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form method="POST" action="{% url 'update_feedback_status' fb.pk %}" style="display:inline">
+                            {% csrf_token %}
+                            <select name="status" onchange="this.form.submit()" style="font-size:12px;padding:4px 8px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;width:auto;margin:0">
+                                <option value="open"     {% if fb.status == 'open' %}selected{% endif %}>Open</option>
+                                <option value="reviewed" {% if fb.status == 'reviewed' %}selected{% endif %}>Reviewed</option>
+                                <option value="resolved" {% if fb.status == 'resolved' %}selected{% endif %}>Resolved</option>
+                            </select>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="empty-row">No feedback submitted yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

@@ -7,6 +7,15 @@
         <h1>System Alerts</h1>
         <p>Monitor and resolve active system alerts</p>
     </div>
+    <div class="topbar-right">
+        {% if page_obj.paginator.count > 0 %}
+        <form method="POST" action="{% url 'bulk_resolve_alerts' %}"
+              data-confirm="Resolve all active alerts? This cannot be undone.">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Resolve All Active</button>
+        </form>
+        {% endif %}
+    </div>
 </div>
 
 <div class="table-wrap">

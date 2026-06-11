@@ -1,5 +1,6 @@
 import csv
 import json
+import logging
 from datetime import timedelta
 
 import numpy as np
@@ -10,7 +11,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Avg, Q
+from django.db.models import Avg, Q, Sum, Count, Case, When, IntegerField
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.template.loader import get_template
@@ -24,6 +25,8 @@ from xhtml2pdf import pisa
 
 from .utils import send_sms_alert, send_email_alert, generate_fridge_qr
 
+from django.contrib.auth.models import User
+
 from .models import (
     Institution,
     Fridge,
@@ -34,6 +37,8 @@ from .models import (
     Alert,
     RestockOrder,
     Transaction,
+    NotificationPreference,
+    Feedback,
 )
 
 from .forms import (
@@ -42,6 +47,8 @@ from .forms import (
     ProductForm,
     FridgeSlotForm,
     TransactionForm,
+    NotificationPreferenceForm,
+    FeedbackForm,
 )
 
 from .serializers import (
@@ -53,8 +60,10 @@ from .serializers import (
     AlertSerializer,
 )
 
+logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 20
+
 
 def _paginate(request, qs):
     return Paginator(qs, _PAGE_SIZE).get_page(request.GET.get('page', 1))
@@ -62,7 +71,6 @@ def _paginate(request, qs):
 
 # ============================================================
 #  SECURITY HELPER — ESP32 API Key decorator
-#  Checks X-Api-Key header OR api_key in JSON body
 # ============================================================
 
 def require_api_key(view_func):
@@ -76,13 +84,13 @@ def require_api_key(view_func):
         header_key = request.headers.get('X-Api-Key', '')
         expected   = getattr(settings, 'ESP32_API_KEY', '')
 
-        # Also allow key in JSON body for backward-compat with existing ESP32 firmware
         body_key = ''
         try:
             body_key = json.loads(request.body).get('api_key', '')
         except (json.JSONDecodeError, Exception):
             pass
 
+        # Reject if expected key is blank (not configured) or keys don't match
         if not expected or (header_key != expected and body_key != expected):
             return JsonResponse(
                 {'status': 'error', 'message': 'Invalid or missing API key.'},
@@ -144,15 +152,26 @@ def api_restock_orders(request):
 
 @login_required
 def dashboard(request):
-    total_fridges        = Fridge.objects.count()
-    online_fridges       = Fridge.objects.filter(status='online').count()
-    offline_fridges      = Fridge.objects.filter(status='offline').count()
-    faulty_fridges       = Fridge.objects.filter(status='faulty').count()
-    total_products       = Product.objects.count()
-    total_institutions   = Institution.objects.count()
-    active_alerts        = Alert.objects.filter(resolved=False).count()
-    pending_orders       = RestockOrder.objects.filter(status='pending').count()
-    fridge_health_pct    = round(online_fridges / total_fridges * 100) if total_fridges else 0
+    # Core counts via a single annotated query
+    counts = Fridge.objects.aggregate(
+        total_fridges=Count('id'),
+        online_fridges=Count(Case(When(status='online',  then=1), output_field=IntegerField())),
+        offline_fridges=Count(Case(When(status='offline', then=1), output_field=IntegerField())),
+        faulty_fridges=Count(Case(When(status='faulty',  then=1), output_field=IntegerField())),
+    )
+    total_fridges   = counts['total_fridges']
+    online_fridges  = counts['online_fridges']
+    offline_fridges = counts['offline_fridges']
+    faulty_fridges  = counts['faulty_fridges']
+
+    total_products     = Product.objects.count()
+    total_institutions = Institution.objects.count()
+    active_alerts      = Alert.objects.filter(resolved=False).count()
+    pending_orders     = RestockOrder.objects.filter(status='pending').count()
+
+    fridge_health_pct = round(online_fridges / total_fridges * 100) if total_fridges else 0
+    offline_pct       = round(offline_fridges / total_fridges * 100) if total_fridges else 0
+    faulty_pct        = round(faulty_fridges  / total_fridges * 100) if total_fridges else 0
 
     agg = Fridge.objects.filter(status='online').aggregate(
         avg_temp=Avg('temperature'),
@@ -161,9 +180,26 @@ def dashboard(request):
     avg_temp     = round(agg['avg_temp'], 1)     if agg['avg_temp']     else None
     avg_humidity = round(agg['avg_humidity'], 1) if agg['avg_humidity'] else None
 
+    total_revenue = Transaction.objects.filter(voided=False).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+
+    # 7-day daily revenue trend
+    today = timezone.now().date()
+    revenue_labels = []
+    revenue_data   = []
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        day_total = Transaction.objects.filter(
+            voided=False,
+            created_at__date=day,
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        revenue_labels.append(day.strftime('%d %b'))
+        revenue_data.append(float(day_total))
+
     fridges             = Fridge.objects.select_related('institution').all()
     recent_alerts       = Alert.objects.select_related('fridge').filter(resolved=False).order_by('-created_at')[:5]
-    recent_transactions = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')[:5]
+    recent_transactions = Transaction.objects.select_related('fridge', 'product').filter(voided=False).order_by('-created_at')[:5]
 
     context = {
         'total_fridges':       total_fridges,
@@ -175,11 +211,16 @@ def dashboard(request):
         'active_alerts':       active_alerts,
         'pending_orders':      pending_orders,
         'fridge_health_pct':   fridge_health_pct,
+        'offline_pct':         offline_pct,
+        'faulty_pct':          faulty_pct,
         'avg_temp':            avg_temp,
         'avg_humidity':        avg_humidity,
+        'total_revenue':       total_revenue,
         'fridges':             fridges,
         'recent_alerts':       recent_alerts,
         'recent_transactions': recent_transactions,
+        'revenue_labels':      json.dumps(revenue_labels),
+        'revenue_data':        json.dumps(revenue_data),
     }
 
     return render(request, 'dairysync/dashboard.html', context)
@@ -323,7 +364,7 @@ def edit_institution(request, id):
 
 
 @login_required
-@require_POST  # SECURITY: prevents deletion via GET/link
+@require_POST
 def delete_institution(request, id):
     institution = get_object_or_404(Institution, id=id)
     name = institution.name
@@ -358,7 +399,7 @@ def edit_fridge(request, id):
 
 
 @login_required
-@require_POST  # SECURITY: prevents deletion via GET/link
+@require_POST
 def delete_fridge(request, id):
     fridge = get_object_or_404(Fridge, id=id)
     code = fridge.fridge_code
@@ -393,7 +434,7 @@ def edit_product(request, id):
 
 
 @login_required
-@require_POST  # SECURITY: prevents deletion via GET/link
+@require_POST
 def delete_product(request, id):
     product = get_object_or_404(Product, id=id)
     name = product.name
@@ -445,6 +486,7 @@ def delete_fridge_slot(request, id):
 def transaction_list(request):
     q = request.GET.get('q', '').strip()
     method_filter = request.GET.get('method', '')
+    voided_filter = request.GET.get('voided', '')
     qs = Transaction.objects.select_related('fridge', 'product').order_by('-created_at')
     if q:
         qs = qs.filter(
@@ -452,10 +494,15 @@ def transaction_list(request):
         )
     if method_filter:
         qs = qs.filter(payment_method=method_filter)
+    if voided_filter == '1':
+        qs = qs.filter(voided=True)
+    elif voided_filter == '0' or voided_filter == '':
+        qs = qs.filter(voided=False)
     return render(request, 'dairysync/transactions.html', {
         'page_obj':      _paginate(request, qs),
         'q':             q,
         'method_filter': method_filter,
+        'voided_filter': voided_filter,
     })
 
 
@@ -471,10 +518,17 @@ def add_transaction(request):
 
 @login_required
 @require_POST
-def delete_transaction(request, id):
+def void_transaction(request, id):
+    """Mark a transaction as voided rather than hard-deleting it."""
     txn = get_object_or_404(Transaction, id=id)
-    txn.delete()
-    messages.success(request, 'Transaction deleted.')
+    if txn.voided:
+        messages.warning(request, 'Transaction is already voided.')
+    else:
+        txn.voided    = True
+        txn.voided_at = timezone.now()
+        txn.voided_by = request.user
+        txn.save(update_fields=['voided', 'voided_at', 'voided_by'])
+        messages.success(request, 'Transaction voided and preserved in records.')
     return redirect('transaction_list')
 
 
@@ -497,10 +551,10 @@ def fridge_detail(request, id):
         .order_by('-created_at')
     )
     return render(request, 'dairysync/fridge_detail.html', {
-        'fridge':         fridge,
-        'slots':          slots,
+        'fridge':          fridge,
+        'slots':           slots,
         'recent_readings': list(reversed(list(recent_readings))),
-        'alerts':         active_fridge_alerts,
+        'alerts':          active_fridge_alerts,
     })
 
 
@@ -509,7 +563,7 @@ def fridge_detail(request, id):
 # ============================================================
 
 @login_required
-@require_POST  # SECURITY: state-changing action must be POST
+@require_POST
 def resolve_alert(request, id):
     alert = get_object_or_404(Alert, id=id)
     alert.resolved = True
@@ -519,12 +573,51 @@ def resolve_alert(request, id):
 
 
 @login_required
-@require_POST  # SECURITY: state-changing action must be POST
+@require_POST
+def bulk_resolve_alerts(request):
+    """Resolve all currently unresolved alerts in one query."""
+    count = Alert.objects.filter(resolved=False).update(resolved=True)
+    messages.success(request, f'{count} alert{" was" if count == 1 else "s were"} resolved.')
+    return redirect('alert_list')
+
+
+@login_required
+@require_POST
 def approve_order(request, id):
     order = get_object_or_404(RestockOrder, id=id)
     order.status = 'approved'
     order.save()
     messages.success(request, f'Restock order for {order.product.name} approved.')
+    return redirect('restock_order_list')
+
+
+@login_required
+@require_POST
+def deliver_order(request, id):
+    """Mark a restock order as delivered and replenish stock in the relevant fridge slot."""
+    order = get_object_or_404(
+        RestockOrder.objects.select_related('fridge', 'product'), id=id
+    )
+    if order.status == 'delivered':
+        messages.warning(request, 'Order is already marked as delivered.')
+        return redirect('restock_order_list')
+
+    order.status = 'delivered'
+    order.save()
+
+    # Replenish the matching fridge slot (if it exists)
+    try:
+        slot = FridgeSlot.objects.get(fridge=order.fridge, product=order.product)
+        slot.current_stock += order.quantity_needed
+        slot.save(update_fields=['current_stock'])
+        StockReading.objects.create(fridge_slot=slot, stock_level=slot.current_stock)
+    except FridgeSlot.DoesNotExist:
+        pass  # Slot may not exist; order is still marked delivered
+
+    messages.success(
+        request,
+        f'Order for {order.product.name} delivered — stock updated for {order.fridge.fridge_code}.'
+    )
     return redirect('restock_order_list')
 
 
@@ -539,6 +632,63 @@ def generate_qr_code(request, id):
     generate_fridge_qr(fridge)
     messages.success(request, f'QR code generated for {fridge.fridge_code}.')
     return redirect('fridge_list')
+
+
+# ============================================================
+#  NOTIFICATION PREFERENCES
+# ============================================================
+
+@login_required
+def notification_preferences(request):
+    pref, _ = NotificationPreference.objects.get_or_create(user=request.user)
+    if request.method == 'POST':
+        form = NotificationPreferenceForm(request.POST, instance=pref)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Notification preferences saved.')
+            return redirect('notification_preferences')
+    else:
+        form = NotificationPreferenceForm(instance=pref)
+    return render(request, 'dairysync/notification_preferences.html', {'form': form})
+
+
+# ============================================================
+#  FEEDBACK
+# ============================================================
+
+@login_required
+def submit_feedback(request):
+    if request.method == 'POST':
+        form = FeedbackForm(request.POST)
+        if form.is_valid():
+            fb = form.save(commit=False)
+            fb.user = request.user
+            fb.save()
+            messages.success(request, 'Thank you for your feedback!')
+            return redirect('dashboard')
+    else:
+        form = FeedbackForm()
+    return render(request, 'dairysync/feedback.html', {'form': form})
+
+
+@login_required
+def feedback_list(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard')
+    feedbacks = Feedback.objects.select_related('user').all()
+    return render(request, 'dairysync/feedback_list.html', {'feedbacks': feedbacks})
+
+
+@login_required
+@require_POST
+def update_feedback_status(request, pk):
+    if not request.user.is_staff:
+        return redirect('dashboard')
+    fb = get_object_or_404(Feedback, pk=pk)
+    fb.status = request.POST.get('status', fb.status)
+    fb.save()
+    return redirect('feedback_list')
 
 
 # ============================================================
@@ -578,14 +728,22 @@ def download_system_report(request):
 @login_required
 def ai_stock_prediction(request):
     predictions = []
-    slots = FridgeSlot.objects.select_related('fridge', 'product').all()
+    from django.db.models import Prefetch
+
+    slots = (
+        FridgeSlot.objects
+        .select_related('fridge', 'product')
+        .prefetch_related(
+            Prefetch(
+                'stockreading_set',
+                queryset=StockReading.objects.order_by('recorded_at'),
+                to_attr='ordered_readings',
+            )
+        )
+    )
 
     for slot in slots:
-        readings = list(
-            StockReading.objects
-            .filter(fridge_slot=slot)
-            .order_by('recorded_at')
-        )
+        readings = slot.ordered_readings
 
         base = {
             'fridge':        slot.fridge.fridge_code,
@@ -610,7 +768,6 @@ def ai_stock_prediction(request):
         ]).reshape(-1, 1)
         y = np.array([r.stock_level for r in readings], dtype=float)
 
-        # All readings at the same timestamp — can't fit a line
         if X.max() == 0:
             predictions.append({**base,
                 'status': 'insufficient_data',
@@ -624,9 +781,9 @@ def ai_stock_prediction(request):
         slope_per_day  = slope_per_hour * 24
         r2             = round(float(model.score(X, y)), 2)
 
-        hours_now      = (timezone.now() - t0).total_seconds() / 3600
-        predicted_now  = float(model.predict([[hours_now]])[0])
-        min_stock      = slot.product.minimum_stock
+        hours_now     = (timezone.now() - t0).total_seconds() / 3600
+        predicted_now = float(model.predict([[hours_now]])[0])
+        min_stock     = slot.product.minimum_stock
 
         if slope_per_hour >= 0:
             trend  = 'increasing' if slope_per_hour > 0.01 else 'stable'
@@ -651,12 +808,12 @@ def ai_stock_prediction(request):
                     status = 'stable'
 
         predictions.append({**base,
-            'status':             status,
-            'trend':              trend,
-            'daily_rate':         round(abs(slope_per_day), 2),
+            'status':              status,
+            'trend':               trend,
+            'daily_rate':          round(abs(slope_per_day), 2),
             'days_until_stockout': days_until_stockout,
-            'depletion_date':     depletion_date,
-            'r2':                 r2,
+            'depletion_date':      depletion_date,
+            'r2':                  r2,
         })
 
     return render(request, 'dairysync/ai_prediction.html', {'predictions': predictions})
@@ -664,13 +821,9 @@ def ai_stock_prediction(request):
 
 # ============================================================
 #  ESP32 SENSOR DATA RECEIVER
-#  SECURITY: api_key validated via require_api_key decorator
-#  Accepts key from X-Api-Key header OR api_key in JSON body
-#  (body fallback keeps existing ESP32 firmware working)
 # ============================================================
 
 def convert_to_boolean(value):
-    """Safely converts ESP32 boolean values (true/false/1/0/open)."""
     if isinstance(value, bool):
         return value
     if isinstance(value, int):
@@ -678,19 +831,59 @@ def convert_to_boolean(value):
     return str(value).strip().lower() in ['true', '1', 'yes', 'open']
 
 
+_ALERT_TYPE_PREF_FIELD = {
+    'high_temperature': 'notify_high_temperature',
+    'low_stock':        'notify_low_stock',
+    'door_open':        'notify_door_open',
+    'power_fault':      'notify_power_fault',
+    'motor_fault':      'notify_motor_fault',
+}
+
+
 def create_alert_and_notify(fridge, alert_type, subject, message):
-    """Creates a system alert and sends SMS + email notifications."""
-    Alert.objects.create(
-        fridge=fridge,
-        alert_type=alert_type,
-        message=message,
-    )
-    send_sms_alert(message)
-    send_email_alert(subject, message)
+    """
+    Create an alert only if no unresolved alert of the same type already exists
+    for this fridge (prevents notification spam on every sensor poll).
+    """
+    already_active = Alert.objects.filter(
+        fridge=fridge, alert_type=alert_type, resolved=False
+    ).exists()
+    if already_active:
+        return  # Already notified — wait until the alert is resolved before re-alerting
+
+    Alert.objects.create(fridge=fridge, alert_type=alert_type, message=message)
+
+    pref_field = _ALERT_TYPE_PREF_FIELD.get(alert_type)
+    prefs = NotificationPreference.objects.select_related('user').all()
+
+    email_recipients = []
+    sms_recipients   = []
+
+    for pref in prefs:
+        if pref_field and not getattr(pref, pref_field, True):
+            continue
+        if pref.email_enabled:
+            email = pref.get_email()
+            if email:
+                email_recipients.append(email)
+        if pref.sms_enabled:
+            phone = pref.get_phone()
+            if phone:
+                sms_recipients.append(phone)
+
+    if email_recipients:
+        send_email_alert(subject, message, recipients=email_recipients)
+    else:
+        send_email_alert(subject, message)
+
+    if sms_recipients:
+        send_sms_alert(message, recipients=sms_recipients)
+    else:
+        send_sms_alert(message)
 
 
-@csrf_exempt        # Must stay — ESP32 cannot send Django CSRF tokens
-@require_api_key    # SECURITY: validates DEVICE_API_KEY before processing
+@csrf_exempt
+@require_api_key
 def receive_sensor_data(request):
     if request.method != 'POST':
         return JsonResponse(
@@ -716,7 +909,6 @@ def receive_sensor_data(request):
 
         fridge = Fridge.objects.get(fridge_code=fridge_code)
 
-        # Update fridge live values
         fridge.temperature = temperature
         fridge.humidity    = humidity
         fridge.voltage     = voltage
@@ -724,7 +916,6 @@ def receive_sensor_data(request):
         fridge.status      = 'online'
         fridge.save()
 
-        # Save sensor reading
         SensorReading.objects.create(
             fridge=fridge,
             temperature=temperature,
@@ -733,16 +924,15 @@ def receive_sensor_data(request):
             door_open=door_open,
         )
 
-        # Temperature alert
-        if temperature > 6:
+        # Temperature alert uses per-fridge configurable threshold
+        if temperature > fridge.temp_threshold:
             create_alert_and_notify(
                 fridge=fridge,
                 alert_type='high_temperature',
                 subject='DAIRYSYNC Temperature Alert',
-                message=f'High temperature detected in {fridge.fridge_code}: {temperature} °C',
+                message=f'High temperature detected in {fridge.fridge_code}: {temperature} °C (threshold: {fridge.temp_threshold} °C)',
             )
 
-        # Door open alert
         if door_open:
             create_alert_and_notify(
                 fridge=fridge,
@@ -751,7 +941,6 @@ def receive_sensor_data(request):
                 message=f'Fridge door is open for {fridge.fridge_code}',
             )
 
-        # Low voltage alert
         if voltage < 10:
             create_alert_and_notify(
                 fridge=fridge,
@@ -760,7 +949,6 @@ def receive_sensor_data(request):
                 message=f'Low voltage detected in {fridge.fridge_code}: {voltage}V',
             )
 
-        # Stock data processing
         for item in stock_data:
             slot_number = item.get('slot_number')
             stock_level = int(item.get('stock_level'))
@@ -769,12 +957,8 @@ def receive_sensor_data(request):
             slot.current_stock = stock_level
             slot.save()
 
-            StockReading.objects.create(
-                fridge_slot=slot,
-                stock_level=stock_level,
-            )
+            StockReading.objects.create(fridge_slot=slot, stock_level=stock_level)
 
-            # Low stock alert + auto restock order
             if stock_level <= slot.product.minimum_stock:
                 create_alert_and_notify(
                     fridge=fridge,
@@ -786,7 +970,6 @@ def receive_sensor_data(request):
                     ),
                 )
 
-                # Only create one pending order per product per fridge
                 already_pending = RestockOrder.objects.filter(
                     fridge=fridge,
                     product=slot.product,
@@ -797,7 +980,8 @@ def receive_sensor_data(request):
                     RestockOrder.objects.create(
                         fridge=fridge,
                         product=slot.product,
-                        quantity_needed=20,
+                        # Use the product's configured restock quantity
+                        quantity_needed=slot.product.restock_quantity,
                         status='pending',
                     )
 
@@ -822,29 +1006,32 @@ def receive_sensor_data(request):
         return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'}, status=400)
 
     except Exception as e:
+        logger.exception('Unexpected error in receive_sensor_data')
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
 
+# ============================================================
+#  REAL-TIME / AJAX ENDPOINTS
+# ============================================================
 
 @login_required
 @require_GET
 def dashboard_stats(request):
     """
     Lightweight JSON endpoint polled every 15s by the dashboard AJAX.
-    Returns stat card counts + recent alerts + fridge status list.
-    Designed to be fast — no heavy joins, no pagination overhead.
+    All Fridge counts derived from a single aggregated query.
     """
+    counts = Fridge.objects.aggregate(
+        total_fridges=Count('id'),
+        online_fridges=Count(Case(When(status='online',  then=1), output_field=IntegerField())),
+        offline_fridges=Count(Case(When(status='offline', then=1), output_field=IntegerField())),
+        faulty_fridges=Count(Case(When(status='faulty',  then=1), output_field=IntegerField())),
+    )
 
-    # Stat counts
-    total_fridges   = Fridge.objects.count()
-    online_fridges  = Fridge.objects.filter(status='online').count()
-    offline_fridges = Fridge.objects.filter(status='offline').count()
-    faulty_fridges  = Fridge.objects.filter(status='faulty').count()
-    total_products  = Product.objects.count()
-    active_alerts   = Alert.objects.filter(resolved=False).count()
-    pending_orders  = RestockOrder.objects.filter(status='pending').count()
+    total_products = Product.objects.count()
+    active_alerts  = Alert.objects.filter(resolved=False).count()
+    pending_orders = RestockOrder.objects.filter(status='pending').count()
 
-    # Recent alerts (last 5) for the alerts table
     recent_alerts = list(
         Alert.objects
         .select_related('fridge')
@@ -858,12 +1045,9 @@ def dashboard_stats(request):
             'created_at',
         )
     )
-
-    # Format datetime for JSON
     for alert in recent_alerts:
         alert['created_at'] = alert['created_at'].strftime('%d %b %Y %H:%M')
 
-    # Fridge status list for live indicators
     fridges = list(
         Fridge.objects
         .select_related('institution')
@@ -874,15 +1058,21 @@ def dashboard_stats(request):
             'temperature',
             'humidity',
             'voltage',
+            'last_updated',
         )
     )
+    # Add staleness flag to each fridge
+    stale_cutoff = timezone.now() - timedelta(minutes=5)
+    for f in fridges:
+        f['is_stale'] = f['last_updated'] < stale_cutoff
+        f['last_updated'] = f['last_updated'].strftime('%d %b %Y %H:%M')
 
     return JsonResponse({
         'stats': {
-            'total_fridges':   total_fridges,
-            'online_fridges':  online_fridges,
-            'offline_fridges': offline_fridges,
-            'faulty_fridges':  faulty_fridges,
+            'total_fridges':   counts['total_fridges'],
+            'online_fridges':  counts['online_fridges'],
+            'offline_fridges': counts['offline_fridges'],
+            'faulty_fridges':  counts['faulty_fridges'],
             'total_products':  total_products,
             'active_alerts':   active_alerts,
             'pending_orders':  pending_orders,
@@ -895,21 +1085,14 @@ def dashboard_stats(request):
 @login_required
 @require_GET
 def fridge_temperature_history(request, id):
-    """
-    Returns the last 20 sensor readings for a specific fridge.
-    Used by the temperature history chart on the dashboard.
-
-    GET /api/v1/fridges/<id>/history/
-    """
     fridge = get_object_or_404(Fridge, id=id)
 
+    limit = min(int(request.GET.get('limit', 20)), 100)
     readings = (
         SensorReading.objects
         .filter(fridge=fridge)
-        .order_by('-recorded_at')[:20]
+        .order_by('-recorded_at')[:limit]
     )
-
-    # Reverse so chart goes oldest → newest left to right
     readings = list(reversed(list(readings)))
 
     data = [
@@ -931,12 +1114,6 @@ def fridge_temperature_history(request, id):
 @login_required
 @require_GET
 def alert_count(request):
-    """
-    Ultra-lightweight endpoint — returns only the active alert count.
-    Polled frequently to detect new alerts for browser notifications.
-
-    GET /api/v1/alert-count/
-    """
     count = Alert.objects.filter(resolved=False).count()
     latest_id = (
         Alert.objects
@@ -957,7 +1134,6 @@ def alert_count(request):
 # ============================================================
 
 def _csv_response(filename, headers, rows):
-    """Return an HttpResponse streaming CSV data."""
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     writer = csv.writer(response)
@@ -1012,10 +1188,10 @@ def export_products(request):
     qs = Product.objects.all()
     if q:
         qs = qs.filter(Q(name__icontains=q))
-    rows = qs.values_list('name', 'price', 'minimum_stock')
+    rows = qs.values_list('name', 'price', 'minimum_stock', 'restock_quantity')
     return _csv_response(
         'products.csv',
-        ['Product Name', 'Price', 'Minimum Stock'],
+        ['Product Name', 'Price', 'Minimum Stock', 'Restock Quantity'],
         rows,
     )
 
@@ -1123,11 +1299,12 @@ def export_transactions(request):
     rows = [
         (t.fridge.fridge_code, t.product.name, t.quantity,
          t.amount, t.payment_method,
+         'Yes' if t.voided else 'No',
          t.created_at.strftime('%Y-%m-%d %H:%M'))
         for t in qs
     ]
     return _csv_response(
         'transactions.csv',
-        ['Fridge Code', 'Product', 'Quantity', 'Amount', 'Payment Method', 'Created At'],
+        ['Fridge Code', 'Product', 'Quantity', 'Amount', 'Payment Method', 'Voided', 'Created At'],
         rows,
     )

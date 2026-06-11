@@ -7,12 +7,11 @@
     <div class="topbar-left">
         <div class="dash-greeting" id="dash-greeting">Welcome back,</div>
         <h1>{{ request.user.get_full_name|default:request.user.username }}</h1>
-        <p>IoT Smart Fridge Monitoring System</p>
+        <p>IoT Smart Fridge Monitoring &mdash; <span id="dash-date" class="dash-inline-date"></span></p>
     </div>
     <div class="topbar-right">
         <div class="dash-date-block">
             <span id="dash-time" class="dash-time">--:--</span>
-            <span id="dash-date" class="dash-date-text"></span>
         </div>
         <span class="live-badge">
             <span class="live-dot"></span> Live
@@ -39,111 +38,167 @@
             {{ offline_fridges }} fridge{{ offline_fridges|pluralize }} offline &mdash; check connectivity
         {% endif %}
     </div>
-    <span class="refresh-note">Updates every 15s</span>
+    <span class="refresh-note">Auto-refresh every 15s</span>
+</div>
+
+{# ── Quick Actions ── #}
+<div class="dash-quick-actions">
+    <a href="{% url 'add_fridge' %}" class="dash-quick-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        Add Fridge
+    </a>
+    <a href="{% url 'add_transaction' %}" class="dash-quick-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        New Transaction
+    </a>
+    <a href="{% url 'restock_order_list' %}" class="dash-quick-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Restock Orders
+        {% if pending_orders > 0 %}<span class="dash-quick-badge">{{ pending_orders }}</span>{% endif %}
+    </a>
+    <a href="{% url 'ai_stock_prediction' %}" class="dash-quick-btn dash-quick-btn-accent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        AI Prediction
+    </a>
+    <a href="{% url 'alert_list' %}" class="dash-quick-btn {% if active_alerts > 0 %}dash-quick-btn-danger{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Alerts
+        {% if active_alerts > 0 %}<span class="dash-quick-badge">{{ active_alerts }}</span>{% endif %}
+    </a>
+    <a href="{% url 'download_system_report' %}" class="dash-quick-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF Report
+    </a>
 </div>
 
 {# ── Stat Cards ── #}
 <div class="cards dash-cards">
 
-    <div class="card dash-card" data-stat="total-fridges">
+    <a class="card dash-card dash-card-link" href="{% url 'fridge_list' %}" data-stat="total-fridges">
         <div class="dash-card-top">
             <div class="card-icon card-icon-blue">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
             </div>
             <span class="card-label">Total Fridges</span>
         </div>
-        <p class="card-value" id="stat-total-fridges">{{ total_fridges }}</p>
+        <p class="card-value" id="stat-total-fridges" data-target="{{ total_fridges }}">{{ total_fridges }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Registered units</span>
             <span class="card-chip card-chip-blue">{{ total_institutions }} site{{ total_institutions|pluralize }}</span>
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card card-success" data-stat="online-fridges">
+    <a class="card dash-card card-success dash-card-link" href="{% url 'fridge_list' %}" data-stat="online-fridges">
         <div class="dash-card-top">
             <div class="card-icon card-icon-green">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
             </div>
             <span class="card-label">Online</span>
         </div>
-        <p class="card-value card-value-green" id="stat-online-fridges">{{ online_fridges }}</p>
+        <p class="card-value card-value-green" id="stat-online-fridges" data-target="{{ online_fridges }}">{{ online_fridges }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Connected</span>
             <span class="card-chip card-chip-green">{{ fridge_health_pct }}% healthy</span>
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card card-danger" data-stat="offline-fridges">
+    <a class="card dash-card card-danger dash-card-link" href="{% url 'fridge_list' %}" data-stat="offline-fridges">
         <div class="dash-card-top">
             <div class="card-icon card-icon-red">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
             </div>
             <span class="card-label">Offline</span>
         </div>
-        <p class="card-value card-value-red" id="stat-offline-fridges">{{ offline_fridges }}</p>
+        <p class="card-value card-value-red" id="stat-offline-fridges" data-target="{{ offline_fridges }}">{{ offline_fridges }}</p>
         <div class="card-footer-row">
             <span class="card-sub">No connection</span>
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card card-warn" data-stat="faulty-fridges">
+    <a class="card dash-card card-warn dash-card-link" href="{% url 'fridge_list' %}" data-stat="faulty-fridges">
         <div class="dash-card-top">
             <div class="card-icon card-icon-amber">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
             <span class="card-label">Faulty</span>
         </div>
-        <p class="card-value card-value-amber" id="stat-faulty-fridges">{{ faulty_fridges }}</p>
+        <p class="card-value card-value-amber" id="stat-faulty-fridges" data-target="{{ faulty_fridges }}">{{ faulty_fridges }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Needs attention</span>
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card" data-stat="total-products">
+    <a class="card dash-card dash-card-link" href="{% url 'product_list' %}" data-stat="total-products">
         <div class="dash-card-top">
             <div class="card-icon card-icon-blue">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             </div>
             <span class="card-label">Products</span>
         </div>
-        <p class="card-value" id="stat-total-products">{{ total_products }}</p>
+        <p class="card-value" id="stat-total-products" data-target="{{ total_products }}">{{ total_products }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Tracked items</span>
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card {% if active_alerts > 0 %}card-danger{% endif %}" data-stat="active-alerts">
+    <a class="card dash-card {% if active_alerts > 0 %}card-danger{% endif %} dash-card-link" href="{% url 'alert_list' %}" data-stat="active-alerts">
         <div class="dash-card-top">
             <div class="card-icon card-icon-red">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             </div>
             <span class="card-label">Active Alerts</span>
         </div>
-        <p class="card-value {% if active_alerts > 0 %}card-value-red{% endif %}" id="stat-active-alerts">{{ active_alerts }}</p>
+        <p class="card-value {% if active_alerts > 0 %}card-value-red{% endif %}" id="stat-active-alerts" data-target="{{ active_alerts }}">{{ active_alerts }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Unresolved</span>
             {% if active_alerts > 0 %}<span class="card-chip card-chip-red">Action needed</span>{% endif %}
         </div>
-    </div>
+    </a>
 
-    <div class="card dash-card {% if pending_orders > 0 %}card-warn{% endif %}" data-stat="pending-orders">
+    <a class="card dash-card {% if pending_orders > 0 %}card-warn{% endif %} dash-card-link" href="{% url 'restock_order_list' %}" data-stat="pending-orders">
         <div class="dash-card-top">
             <div class="card-icon card-icon-amber">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
             </div>
             <span class="card-label">Pending Orders</span>
         </div>
-        <p class="card-value {% if pending_orders > 0 %}card-value-amber{% endif %}" id="stat-pending-orders">{{ pending_orders }}</p>
+        <p class="card-value {% if pending_orders > 0 %}card-value-amber{% endif %}" id="stat-pending-orders" data-target="{{ pending_orders }}">{{ pending_orders }}</p>
         <div class="card-footer-row">
             <span class="card-sub">Awaiting approval</span>
             {% if pending_orders > 0 %}<span class="card-chip card-chip-amber">Pending</span>{% endif %}
         </div>
-    </div>
+    </a>
 
 </div>
 
+{# ── Fleet Health Bar ── #}
+{% if total_fridges > 0 %}
+<div class="dash-fleet-bar-wrap">
+    <div class="dash-fleet-bar-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Fleet health
+    </div>
+    <div class="dash-fleet-bar" id="dash-fleet-bar"
+         data-online="{{ fridge_health_pct }}"
+         data-offline="{{ offline_pct }}"
+         data-faulty="{{ faulty_pct }}"
+         data-online-count="{{ online_fridges }}"
+         data-offline-count="{{ offline_fridges }}"
+         data-faulty-count="{{ faulty_fridges }}">
+        <div class="dash-fleet-seg dash-fleet-online"  id="fleet-seg-online"></div>
+        <div class="dash-fleet-seg dash-fleet-offline" id="fleet-seg-offline"></div>
+        <div class="dash-fleet-seg dash-fleet-faulty"  id="fleet-seg-faulty"></div>
+    </div>
+    <div class="dash-fleet-legend">
+        <span><i style="background:#15803d"></i> Online {{ fridge_health_pct }}%</span>
+        <span><i style="background:#b91c1c"></i> Offline {{ offline_pct }}%</span>
+        <span><i style="background:#d97706"></i> Faulty {{ faulty_pct }}%</span>
+    </div>
+</div>
+{% endif %}
+
 {# ── Charts Row ── #}
-<div class="dash-grid-2 dash-charts-row">
+<div class="dash-grid-2 dash-charts-row {% if not fridges %}dash-grid-single{% endif %}">
 
     {# Fridge Status Donut #}
     <div class="chart-panel">
@@ -201,9 +256,16 @@
             <h2 class="panel-title">Temperature &amp; Humidity</h2>
             <select id="fridge-selector" class="dash-select">
                 {% for fridge in fridges %}
-                <option value="{{ fridge.id }}">{{ fridge.fridge_code }} &mdash; {{ fridge.institution.name }}</option>
+                <option value="{{ fridge.id }}"
+                        data-stale="{{ fridge.is_stale|yesno:'true,false' }}"
+                        data-status="{{ fridge.status }}">
+                    {% if fridge.is_stale %}⚠ {% endif %}{{ fridge.fridge_code }} &mdash; {{ fridge.institution.name }}
+                </option>
                 {% endfor %}
             </select>
+        </div>
+        <div id="fridge-stale-warning" class="health-strip health-strip-info" style="display:none;margin:8px 0 4px;border-radius:6px;padding:6px 12px;font-size:13px">
+            No readings in the last 5 minutes &mdash; fridge may be offline or silent.
         </div>
         <div class="chart-wrap" style="height:210px">
             <canvas id="tempHistoryChart"
@@ -215,6 +277,22 @@
     </div>
     {% endif %}
 
+</div>
+
+{# ── Revenue Trend Chart ── #}
+<div class="chart-panel" style="margin-top:0">
+    <div class="panel-header">
+        <h2 class="panel-title">Revenue &mdash; Last 7 Days</h2>
+        <span class="panel-sub">KES {{ total_revenue|floatformat:0 }} all-time</span>
+    </div>
+    <div class="chart-wrap" style="height:180px">
+        <canvas id="revenueChart"
+                data-labels='{{ revenue_labels }}'
+                data-values='{{ revenue_data }}'
+                role="img"
+                aria-label="Bar chart showing daily revenue for the last 7 days">
+        </canvas>
+    </div>
 </div>
 
 {# ── Activity Row ── #}
@@ -234,7 +312,7 @@
         <div class="dash-activity-list" id="recent-alerts-tbody">
             {% for alert in recent_alerts %}
             <div class="dash-activity-item">
-                <div class="dash-activity-icon {% if alert.alert_type == 'high_temperature' %}dash-activity-red{% elif alert.alert_type == 'power_fault' or alert.alert_type == 'low_stock' %}dash-activity-amber{% else %}dash-activity-blue{% endif %}">
+                <div class="dash-activity-icon {% if alert.alert_type == 'high_temperature' %}dash-activity-red{% elif alert.alert_type == 'power_fault' or alert.alert_type == 'low_stock' or alert.alert_type == 'motor_fault' %}dash-activity-amber{% else %}dash-activity-blue{% endif %}">
                     {% if alert.alert_type == 'high_temperature' %}
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
                     {% elif alert.alert_type == 'door_open' %}
@@ -279,7 +357,12 @@
     <div class="panel">
         <div class="panel-header">
             <h2 class="panel-title">Recent Transactions</h2>
-            <a class="panel-link" href="{% url 'transaction_list' %}">View all &rarr;</a>
+            <div class="dash-txn-header-right">
+                {% if total_revenue %}
+                <span class="dash-revenue-pill">KES {{ total_revenue|floatformat:0 }} total</span>
+                {% endif %}
+                <a class="panel-link" href="{% url 'transaction_list' %}">View all &rarr;</a>
+            </div>
         </div>
         <div class="dash-activity-list">
             {% for txn in recent_transactions %}
@@ -309,7 +392,7 @@
             {% empty %}
             <div class="dash-empty">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                <p>No recent transactions</p>
+                <p>No transactions recorded yet</p>
             </div>
             {% endfor %}
         </div>
@@ -320,24 +403,59 @@
 {# ── Scripts ── #}
 <script>
 (function () {
-    // Greeting based on time of day
+    // Greeting
     const h = new Date().getHours();
-    const greet = h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,';
+    const greet = h < 5 ? 'Working late,' : h < 12 ? 'Good morning,' : h < 17 ? 'Good afternoon,' : 'Good evening,';
     const greetEl = document.getElementById('dash-greeting');
     if (greetEl) greetEl.textContent = greet;
 
-    // Live clock
+    // Live clock + date
     function updateClock() {
         const now = new Date();
         const timeEl = document.getElementById('dash-time');
         const dateEl = document.getElementById('dash-date');
-        if (timeEl) timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        if (dateEl) dateEl.textContent = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        if (timeEl) timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (dateEl) dateEl.textContent = now.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     }
     updateClock();
     setInterval(updateClock, 1000);
 
-    // Fridge Status Donut Chart
+    // Count-up animation
+    function countUp(el, target, duration) {
+        if (target === 0) return;
+        const startTime = performance.now();
+        function step(now) {
+            const progress = Math.min((now - startTime) / duration, 1);
+            const ease = 1 - Math.pow(1 - progress, 3);
+            el.textContent = Math.round(ease * target);
+            if (progress < 1) requestAnimationFrame(step);
+        }
+        el.textContent = '0';
+        requestAnimationFrame(step);
+    }
+    document.querySelectorAll('.card-value[data-target]').forEach(el => {
+        const val = parseInt(el.dataset.target, 10);
+        if (!isNaN(val)) countUp(el, val, 900);
+    });
+
+    // Fleet health bar — set widths from data attributes to avoid template-in-CSS linter errors
+    const fleetBar = document.getElementById('dash-fleet-bar');
+    if (fleetBar) {
+        const onlinePct  = parseInt(fleetBar.dataset.online,  10) || 0;
+        const offlinePct = parseInt(fleetBar.dataset.offline, 10) || 0;
+        const faultyPct  = parseInt(fleetBar.dataset.faulty,  10) || 0;
+        const onlineCount  = fleetBar.dataset.onlineCount;
+        const offlineCount = fleetBar.dataset.offlineCount;
+        const faultyCount  = fleetBar.dataset.faultyCount;
+        const segOnline  = document.getElementById('fleet-seg-online');
+        const segOffline = document.getElementById('fleet-seg-offline');
+        const segFaulty  = document.getElementById('fleet-seg-faulty');
+        if (segOnline)  { segOnline.style.width  = onlinePct  + '%'; segOnline.title  = `${onlineCount} online (${onlinePct}%)`;   }
+        if (segOffline) { segOffline.style.width = offlinePct + '%'; segOffline.title = `${offlineCount} offline (${offlinePct}%)`; }
+        if (segFaulty)  { segFaulty.style.width  = faultyPct  + '%'; segFaulty.title  = `${faultyCount} faulty (${faultyPct})%`;   }
+    }
+
+    // Donut chart
     const ctx     = document.getElementById('fridgeChart');
     const online  = parseInt(ctx.dataset.online)  || 0;
     const offline = parseInt(ctx.dataset.offline) || 0;
@@ -350,7 +468,7 @@
             labels: ['Online', 'Offline', 'Faulty'],
             datasets: [{
                 data: total > 0 ? [online, offline, faulty] : [1, 0, 0],
-                backgroundColor: ['#15803d', '#b91c1c', '#d97706'],
+                backgroundColor: total > 0 ? ['#15803d', '#b91c1c', '#d97706'] : ['#e5e7eb', '#e5e7eb', '#e5e7eb'],
                 borderWidth: 4,
                 borderColor: '#ffffff',
                 hoverOffset: 8,
@@ -359,25 +477,72 @@
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            cutout: '70%',
+            cutout: '72%',
             plugins: {
                 legend: { display: false },
                 tooltip: {
+                    enabled: total > 0,
                     callbacks: {
-                        label: c => ` ${c.label}: ${c.raw} (${total > 0 ? Math.round(c.raw / total * 100) : 0}%)`
+                        label: c => ` ${c.label}: ${c.raw} (${Math.round(c.raw / total * 100)}%)`
                     }
                 },
             },
         },
     });
 
-    // Fridge selector — switch history chart
-    const selector = document.getElementById('fridge-selector');
-    const canvas   = document.getElementById('tempHistoryChart');
+    // Fridge selector + staleness warning
+    const selector     = document.getElementById('fridge-selector');
+    const canvas       = document.getElementById('tempHistoryChart');
+    const staleWarning = document.getElementById('fridge-stale-warning');
+
+    function updateStaleWarning(selectEl) {
+        if (!staleWarning || !selectEl) return;
+        const opt = selectEl.options[selectEl.selectedIndex];
+        staleWarning.style.display = (opt && opt.dataset.stale === 'true') ? '' : 'none';
+    }
+
     if (selector && canvas) {
+        updateStaleWarning(selector);
         selector.addEventListener('change', function () {
             canvas.dataset.fridgeId = this.value;
             canvas.dispatchEvent(new CustomEvent('fridge-changed', { detail: { fridgeId: this.value } }));
+            updateStaleWarning(this);
+        });
+    }
+
+    // Revenue trend bar chart
+    const revCtx = document.getElementById('revenueChart');
+    if (revCtx) {
+        const revLabels = JSON.parse(revCtx.dataset.labels || '[]');
+        const revValues = JSON.parse(revCtx.dataset.values || '[]');
+        new Chart(revCtx, {
+            type: 'bar',
+            data: {
+                labels: revLabels,
+                datasets: [{
+                    label: 'Revenue (KES)',
+                    data: revValues,
+                    backgroundColor: 'rgba(8,43,95,0.75)',
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: c => ` KES ${Number(c.raw).toLocaleString()}`,
+                        },
+                    },
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' } },
+                    x: { grid: { display: false } },
+                },
+            },
         });
     }
 })();

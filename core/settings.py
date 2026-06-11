@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -76,9 +77,6 @@ REST_FRAMEWORK = {
 }
 
 
-# JWT token settings — add this block to settings.py
-from datetime import timedelta
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME':  timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -105,10 +103,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    #Third_partyApps
+    # Third-party
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
     'axes',
-    #My Apps
+    # Project
     'DairyApp',
 ]
 
@@ -224,7 +224,7 @@ AXES_RESET_ON_SUCCESS = True
 
 # ── ESP32 API Key ───────────────────────────────────────────
 # Set this as an environment variable — never hardcode in source
-ESP32_API_KEY = os.environ.get('ESP32_API_KEY', 'change-this-secret-key-in-production')
+ESP32_API_KEY = os.environ.get('ESP32_API_KEY', '')  # empty string = always rejected when unset
 
 
 # ── Logging (track login failures) ─────────────────────────
@@ -280,7 +280,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
