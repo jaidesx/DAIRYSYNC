@@ -43,7 +43,8 @@ ALERT_EMAIL = os.getenv("ALERT_EMAIL")
 # SECURITY WARNING: don't run with debug turned on in production!
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
-    "127.0.0.1,localhost"
+    "127.0.0.1,localhost",
+    "192.168.5.36",
 ).split(",")
 
 REST_FRAMEWORK = {
