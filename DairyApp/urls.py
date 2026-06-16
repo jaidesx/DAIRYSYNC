@@ -52,6 +52,7 @@ urlpatterns = [
 
     # ── ESP32 Sensor Data ─────────────────────────────────────
     path('api/sensor-data/', views.receive_sensor_data, name='receive_sensor_data'),
+    path('api/dispense/',    views.dispense_product_api, name='dispense_product_api'),
 
     # ── Real-time / AJAX Endpoints ────────────────────────────
     path('api/v1/dashboard-stats/',            views.dashboard_stats,            name='dashboard_stats'),

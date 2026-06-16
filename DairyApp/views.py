@@ -1,7 +1,9 @@
 import csv
+import hmac
 import json
 import logging
 from datetime import timedelta
+from decimal import Decimal
 
 import numpy as np
 from django.utils import timezone
@@ -11,6 +13,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Avg, Q, Sum, Count, Case, When, IntegerField
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -66,7 +69,26 @@ _PAGE_SIZE = 20
 
 
 def _paginate(request, qs):
+    if not qs.ordered:
+        qs = qs.order_by('pk')
     return Paginator(qs, _PAGE_SIZE).get_page(request.GET.get('page', 1))
+
+
+def _fridge_offline_cutoff():
+    timeout = getattr(settings, 'FRIDGE_OFFLINE_TIMEOUT_SECONDS', 300)
+    return timezone.now() - timedelta(seconds=timeout)
+
+
+def mark_stale_fridges_offline():
+    return Fridge.objects.filter(
+        status='online',
+    ).filter(
+        Q(last_seen__lt=_fridge_offline_cutoff()) | Q(last_seen__isnull=True),
+    ).update(status='offline')
+
+
+def _is_low_voltage(voltage):
+    return voltage < getattr(settings, 'ESP32_MIN_VOLTAGE', 4.5)
 
 
 # ============================================================
@@ -90,8 +112,11 @@ def require_api_key(view_func):
         except (json.JSONDecodeError, Exception):
             pass
 
-        # Reject if expected key is blank (not configured) or keys don't match
-        if not expected or (header_key != expected and body_key != expected):
+        valid_header = bool(header_key) and hmac.compare_digest(header_key, expected)
+        valid_body = bool(body_key) and hmac.compare_digest(body_key, expected)
+
+        # Reject if expected key is blank (not configured) or keys don't match.
+        if not expected or not (valid_header or valid_body):
             return JsonResponse(
                 {'status': 'error', 'message': 'Invalid or missing API key.'},
                 status=403
@@ -106,6 +131,7 @@ def require_api_key(view_func):
 
 @api_view(['GET'])
 def api_fridges(request):
+    mark_stale_fridges_offline()
     fridges = Fridge.objects.select_related('institution').all()
     serializer = FridgeSerializer(fridges, many=True)
     return Response(serializer.data)
@@ -152,6 +178,7 @@ def api_restock_orders(request):
 
 @login_required
 def dashboard(request):
+    mark_stale_fridges_offline()
     # Core counts via a single annotated query
     counts = Fridge.objects.aggregate(
         total_fridges=Count('id'),
@@ -246,6 +273,7 @@ def institution_list(request):
 
 @login_required
 def fridge_list(request):
+    mark_stale_fridges_offline()
     q = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '')
     qs = Fridge.objects.select_related('institution').all()
@@ -538,6 +566,7 @@ def void_transaction(request, id):
 
 @login_required
 def fridge_detail(request, id):
+    mark_stale_fridges_offline()
     fridge = get_object_or_404(Fridge.objects.select_related('institution'), id=id)
     slots = FridgeSlot.objects.filter(fridge=fridge).select_related('product')
     recent_readings = (
@@ -595,24 +624,28 @@ def approve_order(request, id):
 @require_POST
 def deliver_order(request, id):
     """Mark a restock order as delivered and replenish stock in the relevant fridge slot."""
-    order = get_object_or_404(
-        RestockOrder.objects.select_related('fridge', 'product'), id=id
-    )
-    if order.status == 'delivered':
-        messages.warning(request, 'Order is already marked as delivered.')
-        return redirect('restock_order_list')
+    with transaction.atomic():
+        order = get_object_or_404(
+            RestockOrder.objects.select_for_update().select_related('fridge', 'product'), id=id
+        )
+        if order.status == 'delivered':
+            messages.warning(request, 'Order is already marked as delivered.')
+            return redirect('restock_order_list')
 
-    order.status = 'delivered'
-    order.save()
+        order.status = 'delivered'
+        order.save(update_fields=['status'])
 
-    # Replenish the matching fridge slot (if it exists)
-    try:
-        slot = FridgeSlot.objects.get(fridge=order.fridge, product=order.product)
-        slot.current_stock += order.quantity_needed
-        slot.save(update_fields=['current_stock'])
-        StockReading.objects.create(fridge_slot=slot, stock_level=slot.current_stock)
-    except FridgeSlot.DoesNotExist:
-        pass  # Slot may not exist; order is still marked delivered
+        # Replenish the matching fridge slot (if it exists)
+        try:
+            slot = FridgeSlot.objects.select_for_update().get(
+                fridge=order.fridge,
+                product=order.product,
+            )
+            slot.current_stock += order.quantity_needed
+            slot.save(update_fields=['current_stock'])
+            StockReading.objects.create(fridge_slot=slot, stock_level=slot.current_stock)
+        except FridgeSlot.DoesNotExist:
+            pass  # Slot may not exist; order is still marked delivered
 
     messages.success(
         request,
@@ -907,83 +940,92 @@ def receive_sensor_data(request):
         door_open   = convert_to_boolean(data.get('door_open'))
         stock_data  = data.get('stock', [])
 
-        fridge = Fridge.objects.get(fridge_code=fridge_code)
+        with transaction.atomic():
+            fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
+            now = timezone.now()
 
-        fridge.temperature = temperature
-        fridge.humidity    = humidity
-        fridge.voltage     = voltage
-        fridge.door_open   = door_open
-        fridge.status      = 'online'
-        fridge.save()
+            fridge.temperature = temperature
+            fridge.humidity    = humidity
+            fridge.voltage     = voltage
+            fridge.door_open   = door_open
+            fridge.status      = 'online'
+            fridge.last_seen   = now
+            fridge.save(update_fields=[
+                'temperature', 'humidity', 'voltage', 'door_open',
+                'status', 'last_seen', 'last_updated',
+            ])
 
-        SensorReading.objects.create(
-            fridge=fridge,
-            temperature=temperature,
-            humidity=humidity,
-            voltage=voltage,
-            door_open=door_open,
-        )
-
-        # Temperature alert uses per-fridge configurable threshold
-        if temperature > fridge.temp_threshold:
-            create_alert_and_notify(
+            SensorReading.objects.create(
                 fridge=fridge,
-                alert_type='high_temperature',
-                subject='DAIRYSYNC Temperature Alert',
-                message=f'High temperature detected in {fridge.fridge_code}: {temperature} °C (threshold: {fridge.temp_threshold} °C)',
+                temperature=temperature,
+                humidity=humidity,
+                voltage=voltage,
+                door_open=door_open,
             )
 
-        if door_open:
-            create_alert_and_notify(
-                fridge=fridge,
-                alert_type='door_open',
-                subject='DAIRYSYNC Door Alert',
-                message=f'Fridge door is open for {fridge.fridge_code}',
-            )
-
-        if voltage < 10:
-            create_alert_and_notify(
-                fridge=fridge,
-                alert_type='power_fault',
-                subject='DAIRYSYNC Power Fault Alert',
-                message=f'Low voltage detected in {fridge.fridge_code}: {voltage}V',
-            )
-
-        for item in stock_data:
-            slot_number = item.get('slot_number')
-            stock_level = int(item.get('stock_level'))
-
-            slot = FridgeSlot.objects.get(fridge=fridge, slot_number=slot_number)
-            slot.current_stock = stock_level
-            slot.save()
-
-            StockReading.objects.create(fridge_slot=slot, stock_level=stock_level)
-
-            if stock_level <= slot.product.minimum_stock:
+            # Temperature alert uses per-fridge configurable threshold
+            if temperature > fridge.temp_threshold:
                 create_alert_and_notify(
                     fridge=fridge,
-                    alert_type='low_stock',
-                    subject='DAIRYSYNC Low Stock Alert',
-                    message=(
-                        f'Low stock for {slot.product.name} '
-                        f'in {fridge.fridge_code}. Remaining: {stock_level}'
-                    ),
+                    alert_type='high_temperature',
+                    subject='DAIRYSYNC Temperature Alert',
+                    message=f'High temperature detected in {fridge.fridge_code}: {temperature} °C (threshold: {fridge.temp_threshold} °C)',
                 )
 
-                already_pending = RestockOrder.objects.filter(
+            if door_open:
+                create_alert_and_notify(
                     fridge=fridge,
-                    product=slot.product,
-                    status='pending',
-                ).exists()
+                    alert_type='door_open',
+                    subject='DAIRYSYNC Door Alert',
+                    message=f'Fridge door is open for {fridge.fridge_code}',
+                )
 
-                if not already_pending:
-                    RestockOrder.objects.create(
+            if _is_low_voltage(voltage):
+                create_alert_and_notify(
+                    fridge=fridge,
+                    alert_type='power_fault',
+                    subject='DAIRYSYNC Power Fault Alert',
+                    message=f'Low voltage detected in {fridge.fridge_code}: {voltage}V',
+                )
+
+            for item in stock_data:
+                slot_number = item.get('slot_number')
+                stock_level = int(item.get('stock_level'))
+
+                slot = FridgeSlot.objects.select_for_update().get(
+                    fridge=fridge,
+                    slot_number=slot_number,
+                )
+                slot.current_stock = stock_level
+                slot.save(update_fields=['current_stock'])
+
+                StockReading.objects.create(fridge_slot=slot, stock_level=stock_level)
+
+                if stock_level <= slot.product.minimum_stock:
+                    create_alert_and_notify(
+                        fridge=fridge,
+                        alert_type='low_stock',
+                        subject='DAIRYSYNC Low Stock Alert',
+                        message=(
+                            f'Low stock for {slot.product.name} '
+                            f'in {fridge.fridge_code}. Remaining: {stock_level}'
+                        ),
+                    )
+
+                    already_pending = RestockOrder.objects.filter(
                         fridge=fridge,
                         product=slot.product,
-                        # Use the product's configured restock quantity
-                        quantity_needed=slot.product.restock_quantity,
                         status='pending',
-                    )
+                    ).exists()
+
+                    if not already_pending:
+                        RestockOrder.objects.create(
+                            fridge=fridge,
+                            product=slot.product,
+                            # Use the product's configured restock quantity
+                            quantity_needed=slot.product.restock_quantity,
+                            status='pending',
+                        )
 
         return JsonResponse({
             'status': 'success',
@@ -1010,6 +1052,104 @@ def receive_sensor_data(request):
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
 
+@csrf_exempt
+@require_api_key
+def dispense_product_api(request):
+    if request.method != 'POST':
+        return JsonResponse(
+            {'status': 'error', 'message': 'Only POST method allowed'},
+            status=405,
+        )
+
+    try:
+        data = json.loads(request.body)
+        fridge_code = data.get('fridge_code')
+        slot_number = int(data.get('slot_number'))
+        quantity = int(data.get('quantity', 1))
+        product_detected = convert_to_boolean(data.get('product_detected'))
+
+        if not fridge_code:
+            return JsonResponse(
+                {'status': 'error', 'message': 'fridge_code is required'},
+                status=400,
+            )
+        if quantity < 1:
+            return JsonResponse(
+                {'status': 'error', 'message': 'quantity must be at least 1'},
+                status=400,
+            )
+        if not product_detected:
+            return JsonResponse({
+                'status': 'ignored',
+                'message': 'Stock was not reduced because product detection was not confirmed.',
+            })
+
+        with transaction.atomic():
+            fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
+            slot = (
+                FridgeSlot.objects
+                .select_for_update()
+                .select_related('product')
+                .get(fridge=fridge, slot_number=slot_number)
+            )
+
+            if slot.current_stock < quantity:
+                return JsonResponse(
+                    {'status': 'error', 'message': 'Insufficient stock for dispense.'},
+                    status=409,
+                )
+
+            slot.current_stock -= quantity
+            slot.save(update_fields=['current_stock'])
+            StockReading.objects.create(fridge_slot=slot, stock_level=slot.current_stock)
+            Transaction.objects.create(
+                product=slot.product,
+                fridge=fridge,
+                quantity=quantity,
+                amount=Decimal(slot.product.price) * quantity,
+                payment_method='manual',
+            )
+
+            if slot.current_stock <= slot.product.minimum_stock:
+                create_alert_and_notify(
+                    fridge=fridge,
+                    alert_type='low_stock',
+                    subject='DAIRYSYNC Low Stock Alert',
+                    message=(
+                        f'Low stock for {slot.product.name} '
+                        f'in {fridge.fridge_code}. Remaining: {slot.current_stock}'
+                    ),
+                )
+                RestockOrder.objects.get_or_create(
+                    fridge=fridge,
+                    product=slot.product,
+                    status='pending',
+                    defaults={'quantity_needed': slot.product.restock_quantity},
+                )
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Dispense confirmed and stock deducted.',
+            'slot_number': slot_number,
+            'current_stock': slot.current_stock,
+        })
+
+    except Fridge.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Fridge not found'}, status=404)
+    except FridgeSlot.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Fridge slot not found'}, status=404)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {'status': 'error', 'message': 'Invalid slot_number or quantity'},
+            status=400,
+        )
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.exception('Unexpected error in dispense_product_api')
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
 # ============================================================
 #  REAL-TIME / AJAX ENDPOINTS
 # ============================================================
@@ -1021,6 +1161,7 @@ def dashboard_stats(request):
     Lightweight JSON endpoint polled every 15s by the dashboard AJAX.
     All Fridge counts derived from a single aggregated query.
     """
+    mark_stale_fridges_offline()
     counts = Fridge.objects.aggregate(
         total_fridges=Count('id'),
         online_fridges=Count(Case(When(status='online',  then=1), output_field=IntegerField())),
@@ -1058,14 +1199,15 @@ def dashboard_stats(request):
             'temperature',
             'humidity',
             'voltage',
+            'last_seen',
             'last_updated',
         )
     )
     # Add staleness flag to each fridge
-    stale_cutoff = timezone.now() - timedelta(minutes=5)
     for f in fridges:
-        f['is_stale'] = f['last_updated'] < stale_cutoff
+        f['is_stale'] = not f['last_seen'] or f['last_seen'] < _fridge_offline_cutoff()
         f['last_updated'] = f['last_updated'].strftime('%d %b %Y %H:%M')
+        f['last_seen'] = f['last_seen'].strftime('%d %b %Y %H:%M') if f['last_seen'] else None
 
     return JsonResponse({
         'stats': {
@@ -1160,6 +1302,7 @@ def export_institutions(request):
 
 @login_required
 def export_fridges(request):
+    mark_stale_fridges_offline()
     q             = request.GET.get('q', '').strip()
     status_filter = request.GET.get('status', '')
     qs = Fridge.objects.select_related('institution').all()

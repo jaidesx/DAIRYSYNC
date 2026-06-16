@@ -52,7 +52,7 @@
                 </td>
                 <td>{{ fridge.humidity }}%</td>
                 <td>
-                    {% if fridge.voltage < 11 %}
+                    {% if fridge.voltage < 4.5 %}
                         <span style="color:#b45309;font-weight:bold">{{ fridge.voltage }}V ⚠</span>
                     {% else %}
                         {{ fridge.voltage }}V

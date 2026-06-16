@@ -23,6 +23,7 @@ env/
 ENV/
 .venv/
 .syncvenv/
+syncvenv/
 
 
 # ===============================

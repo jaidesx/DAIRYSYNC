@@ -23,10 +23,10 @@ class InstitutionAdmin(admin.ModelAdmin):
 
 @admin.register(Fridge)
 class FridgeAdmin(admin.ModelAdmin):
-    list_display = ['fridge_code', 'institution', 'status', 'temperature', 'humidity', 'voltage', 'door_open', 'last_updated']
+    list_display = ['fridge_code', 'institution', 'status', 'temperature', 'humidity', 'voltage', 'door_open', 'last_seen', 'last_updated']
     list_filter = ['status', 'institution', 'door_open']
     search_fields = ['fridge_code', 'institution__name']
-    readonly_fields = ['temperature', 'humidity', 'voltage', 'door_open', 'status', 'last_updated', 'qr_code']
+    readonly_fields = ['temperature', 'humidity', 'voltage', 'door_open', 'status', 'last_seen', 'last_updated', 'qr_code']
     ordering = ['fridge_code']
 
 

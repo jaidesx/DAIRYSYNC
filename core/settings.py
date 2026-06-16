@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from datetime import timedelta
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -22,6 +23,7 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 DEBUG = os.getenv("DEBUG") == "True"
+TESTING = 'test' in sys.argv
 
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
@@ -41,11 +43,14 @@ ALERT_EMAIL = os.getenv("ALERT_EMAIL")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS",
-    "127.0.0.1,localhost",
-    "192.168.5.36",
-).split(",")
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_HOSTS",
+        "127.0.0.1,localhost,192.168.5.36",
+    ).split(",")
+    if host.strip()
+]
 
 REST_FRAMEWORK = {
     # JWT as the default authentication method
@@ -171,13 +176,13 @@ SESSION_COOKIE_AGE = 60 * 60 * 2          # 2 hours in seconds
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 
 # Only send session cookie over HTTPS (set True in production)
-SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG and not TESTING
 
 # Prevent JS from reading session cookie (XSS protection)
 SESSION_COOKIE_HTTPONLY = True
 
 # CSRF cookie — only over HTTPS in production
-CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG and not TESTING
 CSRF_COOKIE_HTTPONLY = True
 
 
@@ -185,7 +190,7 @@ CSRF_COOKIE_HTTPONLY = True
 # Set these True only in production (when DEBUG=False)
 
 # Redirect all HTTP to HTTPS
-SECURE_SSL_REDIRECT = not DEBUG
+SECURE_SSL_REDIRECT = not DEBUG and not TESTING
 
 # Tell browsers to only use HTTPS for 1 year
 SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0
@@ -226,6 +231,8 @@ AXES_RESET_ON_SUCCESS = True
 # ── ESP32 API Key ───────────────────────────────────────────
 # Set this as an environment variable — never hardcode in source
 ESP32_API_KEY = os.environ.get('ESP32_API_KEY', '')  # empty string = always rejected when unset
+FRIDGE_OFFLINE_TIMEOUT_SECONDS = int(os.getenv('FRIDGE_OFFLINE_TIMEOUT_SECONDS', '300'))
+ESP32_MIN_VOLTAGE = float(os.getenv('ESP32_MIN_VOLTAGE', '4.5'))
 
 
 # ── Logging (track login failures) ─────────────────────────

@@ -36,7 +36,8 @@ class BaseFixture(TestCase):
         )
         self.fridge = Fridge.objects.create(
             fridge_code='F001', institution=self.institution,
-            temperature=4.0, humidity=60.0, voltage=12.0, status='online',
+            temperature=4.0, humidity=60.0, voltage=5.0, status='online',
+            last_seen=timezone.now(),
         )
         self.product = Product.objects.create(
             name='Lato Milk', price=3000, minimum_stock=5,
@@ -522,6 +523,7 @@ class SensorEndpointTests(BaseFixture):
         self.slot.refresh_from_db()
         self.assertEqual(self.slot.current_stock, 8)
         self.assertEqual(SensorReading.objects.count(), 1)
+        self.assertIsNotNone(self.fridge.last_seen)
         mock_sms.assert_not_called()
 
     @patch('DairyApp.views.send_sms_alert')
@@ -538,11 +540,21 @@ class SensorEndpointTests(BaseFixture):
 
     @patch('DairyApp.views.send_sms_alert')
     @patch('DairyApp.views.send_email_alert')
+    def test_five_volt_supply_does_not_trigger_power_alert(self, mock_email, mock_sms):
+        self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 5.0, 'door_open': False, 'stock': [],
+        })
+        self.assertFalse(Alert.objects.filter(alert_type='power_fault').exists())
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
     def test_low_voltage_triggers_alert(self, mock_email, mock_sms):
         self._post({
             'fridge_code': 'F001',
             'temperature': 4.0, 'humidity': 60,
-            'voltage': 8.0, 'door_open': False, 'stock': [],
+            'voltage': 4.0, 'door_open': False, 'stock': [],
         })
         self.assertTrue(
             Alert.objects.filter(alert_type='power_fault').exists())
@@ -580,6 +592,18 @@ class SensorEndpointTests(BaseFixture):
             {'fridge_code': 'F001', 'temperature': 4.0,
              'humidity': 60, 'voltage': 12, 'door_open': False, 'stock': []},
             key='WRONG',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_missing_api_key_rejected(self):
+        response = self.client.post(
+            reverse('receive_sensor_data'),
+            json.dumps({
+                'fridge_code': 'F001',
+                'temperature': 4.0, 'humidity': 60,
+                'voltage': 5.0, 'door_open': False, 'stock': [],
+            }),
+            content_type='application/json',
         )
         self.assertEqual(response.status_code, 403)
 
@@ -623,6 +647,81 @@ class SensorEndpointTests(BaseFixture):
             'voltage': 12, 'door_open': False, 'stock': [],
         })
         self.assertEqual(response.status_code, 400)
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_sensor_upload_is_atomic_when_stock_slot_is_invalid(self, mock_email, mock_sms):
+        response = self._post({
+            'fridge_code': 'F001',
+            'temperature': 4.0, 'humidity': 60,
+            'voltage': 5.0, 'door_open': False,
+            'stock': [{'slot_number': 999, 'stock_level': 3}],
+        })
+        self.assertEqual(response.status_code, 404)
+        self.fridge.refresh_from_db()
+        self.assertEqual(self.fridge.temperature, 4.0)
+        self.assertEqual(SensorReading.objects.count(), 0)
+
+
+@override_settings(ESP32_API_KEY='TEST_KEY_123', FRIDGE_OFFLINE_TIMEOUT_SECONDS=300)
+class FridgeStatusTests(BaseFixture):
+
+    def test_dashboard_counts_recent_fridge_as_online(self):
+        response = self.client.get(reverse('dashboard_stats'))
+        self.assertEqual(response.status_code, 200)
+        self.fridge.refresh_from_db()
+        self.assertEqual(self.fridge.status, 'online')
+        self.assertEqual(response.json()['stats']['online_fridges'], 1)
+
+    def test_offline_timeout_marks_stale_fridge_offline(self):
+        self.fridge.last_seen = timezone.now() - timedelta(seconds=301)
+        self.fridge.status = 'online'
+        self.fridge.save(update_fields=['last_seen', 'status'])
+
+        response = self.client.get(reverse('dashboard_stats'))
+        self.assertEqual(response.status_code, 200)
+        self.fridge.refresh_from_db()
+        self.assertEqual(self.fridge.status, 'offline')
+        self.assertEqual(response.json()['stats']['offline_fridges'], 1)
+
+
+@override_settings(ESP32_API_KEY='TEST_KEY_123')
+class DispenseEndpointTests(BaseFixture):
+
+    def _post(self, data, key='TEST_KEY_123'):
+        return self.client.post(
+            reverse('dispense_product_api'),
+            json.dumps(data),
+            content_type='application/json',
+            HTTP_X_API_KEY=key,
+        )
+
+    @patch('DairyApp.views.send_sms_alert')
+    @patch('DairyApp.views.send_email_alert')
+    def test_stock_deducted_after_successful_product_detection(self, mock_email, mock_sms):
+        response = self._post({
+            'fridge_code': 'F001',
+            'slot_number': 1,
+            'quantity': 1,
+            'product_detected': True,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.current_stock, 9)
+        self.assertEqual(StockReading.objects.filter(fridge_slot=self.slot).count(), 1)
+        self.assertTrue(Transaction.objects.filter(fridge=self.fridge, product=self.product).exists())
+
+    def test_stock_not_deducted_without_product_detection(self):
+        response = self._post({
+            'fridge_code': 'F001',
+            'slot_number': 1,
+            'quantity': 1,
+            'product_detected': False,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.current_stock, 10)
+        self.assertEqual(StockReading.objects.filter(fridge_slot=self.slot).count(), 0)
 
 
 # ── Stock Prediction ──────────────────────────────────────────────────────────

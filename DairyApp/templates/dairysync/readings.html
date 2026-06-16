@@ -41,7 +41,7 @@
                 </td>
                 <td>{{ reading.humidity }}%</td>
                 <td>
-                    {% if reading.voltage < 11 %}
+                    {% if reading.voltage < 4.5 %}
                         <span style="color:#b45309;font-weight:bold">{{ reading.voltage }}V ⚠</span>
                     {% else %}
                         {{ reading.voltage }}V

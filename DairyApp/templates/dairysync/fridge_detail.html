@@ -64,9 +64,9 @@
         </div>
         <div class="card-info">
             <div class="card-label">Voltage</div>
-            <div class="card-value {% if fridge.voltage < 10 %}text-danger{% endif %}">
+            <div class="card-value {% if fridge.voltage < 4.5 %}text-danger{% endif %}">
                 {{ fridge.voltage }}V
-                {% if fridge.voltage < 10 %}<span style="font-size:13px">⚠</span>{% endif %}
+                {% if fridge.voltage < 4.5 %}<span style="font-size:13px">⚠</span>{% endif %}
             </div>
         </div>
     </div>

@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 
@@ -27,6 +28,7 @@ class Fridge(models.Model):
     door_open       = models.BooleanField(default=False)
     voltage         = models.FloatField(default=0)
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='offline', db_index=True)
+    last_seen       = models.DateTimeField(blank=True, null=True, db_index=True)
     last_updated    = models.DateTimeField(auto_now=True)
     qr_code         = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     temp_threshold  = models.FloatField(
@@ -39,8 +41,15 @@ class Fridge(models.Model):
 
     @property
     def is_stale(self):
-        """True if the last reading is older than 5 minutes (fridge may have gone silent)."""
-        return (timezone.now() - self.last_updated).total_seconds() > 300
+        """True if the last heartbeat is older than the configured offline timeout."""
+        if not self.last_seen:
+            return True
+        timeout = getattr(settings, 'FRIDGE_OFFLINE_TIMEOUT_SECONDS', 300)
+        return (timezone.now() - self.last_seen).total_seconds() > timeout
+
+    @property
+    def is_online(self):
+        return self.status == 'online' and not self.is_stale
 
 
 class Product(models.Model):
