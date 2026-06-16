@@ -35,7 +35,11 @@ class ProductForm(forms.ModelForm):
 class FridgeSlotForm(forms.ModelForm):
     class Meta:
         model  = FridgeSlot
-        fields = ['fridge', 'product', 'slot_number', 'motor_pin', 'ir_sensor_pin']
+        fields = [
+            'fridge', 'product', 'slot_number',
+            'current_stock', 'max_capacity', 'low_stock_threshold',
+            'motor_pin', 'ir_sensor_pin',
+        ]
 
 
 class TransactionForm(forms.ModelForm):

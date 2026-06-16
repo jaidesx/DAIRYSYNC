@@ -139,8 +139,6 @@
             const tempEl = document.querySelector(`[data-fridge-temp="${fridge.id}"]`);
             if (tempEl) {
                 tempEl.textContent = `${fridge.temperature} °C`;
-                tempEl.style.color = fridge.temperature > 8 ? '#b91c1c' : '';
-                tempEl.style.fontWeight = fridge.temperature > 8 ? 'bold' : '';
             }
         });
     }

@@ -33,7 +33,7 @@
             <tr>
                 <td><span class="code-tag">{{ reading.fridge.fridge_code }}</span></td>
                 <td>
-                    {% if reading.temperature > 8 %}
+                    {% if reading.temperature > reading.fridge.temp_threshold %}
                         <span style="color:#b91c1c;font-weight:bold">{{ reading.temperature }} °C ⚠</span>
                     {% else %}
                         {{ reading.temperature }} °C

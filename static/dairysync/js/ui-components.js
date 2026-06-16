@@ -400,14 +400,26 @@ document.addEventListener('DOMContentLoaded', () => {
         FormValidator.attachTo(`#${form.id}`);
     });
 
-    // Intercept delete links — replace onclick="return confirm(...)" with modal
+    // Intercept delete links/forms — replace onclick="return confirm(...)" with modal
     document.querySelectorAll('[data-confirm]').forEach(el => {
-        el.addEventListener('click', (e) => {
-            e.preventDefault();
-            const msg  = el.dataset.confirm || 'Are you sure you want to delete this?';
-            const href = el.getAttribute('href');
-            confirmAction(msg, () => { window.location.href = href; });
-        });
+        if (el.tagName === 'FORM') {
+            // For forms with data-confirm, intercept the submit event
+            el.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const msg = el.dataset.confirm || 'Are you sure you want to delete this?';
+                confirmAction(msg, () => { el.submit(); });
+            });
+        } else {
+            // For anchor tags or other clickable elements
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                const msg  = el.dataset.confirm || 'Are you sure you want to delete this?';
+                const href = el.getAttribute('href');
+                if (href && href !== 'null') {
+                    confirmAction(msg, () => { window.location.href = href; });
+                }
+            });
+        }
     });
 
     // Page loader on link navigation

@@ -37,13 +37,15 @@
             <tr>
                 <td><span class="code-tag">{{ slot.fridge.fridge_code }}</span></td>
                 <td>{{ slot.fridge.institution.name }}</td>
-                <td>{{ slot.product.name }}</td>
+                <td>{% if slot.product %}{{ slot.product.name }}{% else %}<span class="muted-text">No product assigned</span>{% endif %}</td>
                 <td>{{ slot.slot_number }}</td>
                 <td>{{ slot.current_stock }}</td>
                 <td>
-                    {% if slot.current_stock <= slot.product.minimum_stock %}
+                    {% if not slot.product %}
+                        <span class="type-badge type-gray">Not Configured</span>
+                    {% elif slot.current_stock <= slot.low_stock_threshold %}
                         <span class="type-badge type-red">Low Stock</span>
-                    {% elif slot.current_stock <= slot.product.minimum_stock|add:5 %}
+                    {% elif slot.current_stock <= slot.low_stock_threshold|add:5 %}
                         <span class="type-badge type-amber">Running Low</span>
                     {% else %}
                         <span class="type-badge type-green">Sufficient</span>

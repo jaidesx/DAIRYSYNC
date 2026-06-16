@@ -1,7 +1,14 @@
 from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+
 
 
 class Institution(models.Model):
@@ -51,6 +58,10 @@ class Fridge(models.Model):
     def is_online(self):
         return self.status == 'online' and not self.is_stale
 
+    @property
+    def has_high_temperature(self):
+        return self.temperature > self.temp_threshold
+
 
 class Product(models.Model):
     name             = models.CharField(max_length=100)
@@ -66,16 +77,98 @@ class Product(models.Model):
 
 
 class FridgeSlot(models.Model):
-    fridge        = models.ForeignKey(Fridge, on_delete=models.CASCADE)
-    product       = models.ForeignKey(Product, on_delete=models.CASCADE)
-    slot_number   = models.PositiveIntegerField()
+    fridge = models.ForeignKey(
+        Fridge,
+        on_delete=models.CASCADE,
+        related_name="slots",
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="fridge_slots",
+    )
+
+    slot_number = models.PositiveSmallIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(6),
+        ],
+    )
+
     current_stock = models.PositiveIntegerField(default=0)
-    motor_pin     = models.PositiveIntegerField()
-    ir_sensor_pin = models.PositiveIntegerField()
+    max_capacity = models.PositiveIntegerField(default=10)
+    low_stock_threshold = models.PositiveIntegerField(default=2)
+
+    motor_pin = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    ir_sensor_pin = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["fridge", "slot_number"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fridge", "slot_number"],
+                name="unique_slot_number_per_fridge",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    slot_number__gte=1,
+                    slot_number__lte=6,
+                ),
+                name="fridge_slot_number_between_1_and_6",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    current_stock__lte=models.F(
+                        "max_capacity"
+                    )
+                ),
+                name="fridge_slot_stock_not_above_capacity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    low_stock_threshold__lte=models.F(
+                        "max_capacity"
+                    )
+                ),
+                name="fridge_slot_low_threshold_not_above_capacity",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+
+        if self.current_stock > self.max_capacity:
+            raise ValidationError({
+                "current_stock": (
+                    "Current stock cannot exceed "
+                    "maximum capacity."
+                )
+            })
+
+        if self.low_stock_threshold > self.max_capacity:
+            raise ValidationError({
+                "low_stock_threshold": (
+                    "Low-stock threshold cannot exceed "
+                    "maximum capacity."
+                )
+            })
 
     def __str__(self):
-        return f"{self.fridge.fridge_code} - Slot {self.slot_number}"
-
+        return (
+            f"{self.fridge.fridge_code} "
+            f"- Slot {self.slot_number}"
+        )
 
 class SensorReading(models.Model):
     fridge      = models.ForeignKey(Fridge, on_delete=models.CASCADE)
@@ -207,3 +300,26 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f'[{self.get_category_display()}] {self.subject}'
+
+
+
+@receiver(post_save, sender=Fridge)
+def create_default_fridge_slots(
+    sender,
+    instance,
+    created,
+    **kwargs,
+):
+    if not created:
+        return
+
+    FridgeSlot.objects.bulk_create(
+        [
+            FridgeSlot(
+                fridge=instance,
+                slot_number=number,
+            )
+            for number in range(1, 7)
+        ],
+        ignore_conflicts=True,
+    )

@@ -39,11 +39,29 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(FridgeSlot)
 class FridgeSlotAdmin(admin.ModelAdmin):
-    list_display = ['fridge', 'slot_number', 'product', 'current_stock', 'motor_pin', 'ir_sensor_pin']
-    list_filter = ['fridge', 'product']
-    search_fields = ['fridge__fridge_code', 'product__name']
-    readonly_fields = ['current_stock']
-    ordering = ['fridge', 'slot_number']
+    list_display = (
+        "fridge",
+        "slot_number",
+        "product",
+        "current_stock",
+        "max_capacity",
+        "low_stock_threshold",
+    )
+
+    list_filter = (
+        "fridge",
+        "product",
+    )
+
+    search_fields = (
+        "fridge__fridge_code",
+        "product__name",
+    )
+
+    ordering = (
+        "fridge",
+        "slot_number",
+    )
 
 
 @admin.register(SensorReading)

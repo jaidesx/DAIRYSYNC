@@ -3,6 +3,9 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.db import IntegrityError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -42,9 +45,22 @@ class BaseFixture(TestCase):
         self.product = Product.objects.create(
             name='Lato Milk', price=3000, minimum_stock=5,
         )
-        self.slot = FridgeSlot.objects.create(
-            fridge=self.fridge, product=self.product,
-            slot_number=1, current_stock=10, motor_pin=18, ir_sensor_pin=19,
+        self.slot = self.fridge.slots.get(slot_number=1)
+        self.slot.product = self.product
+        self.slot.current_stock = 10
+        self.slot.max_capacity = 10
+        self.slot.low_stock_threshold = 5
+        self.slot.motor_pin = 18
+        self.slot.ir_sensor_pin = 19
+        self.slot.save(
+            update_fields=[
+                'product',
+                'current_stock',
+                'max_capacity',
+                'low_stock_threshold',
+                'motor_pin',
+                'ir_sensor_pin',
+            ]
         )
 
 
@@ -240,6 +256,61 @@ class FridgeCRUDTests(BaseFixture):
 
 class FridgeSlotTests(BaseFixture):
 
+    def test_new_fridge_automatically_receives_slots_1_to_6(self):
+        fridge = Fridge.objects.create(
+            fridge_code='AUTO6',
+            institution=self.institution,
+        )
+        self.assertEqual(
+            list(fridge.slots.order_by('slot_number').values_list('slot_number', flat=True)),
+            [1, 2, 3, 4, 5, 6],
+        )
+
+    def test_create_fridge_slots_command_does_not_create_duplicates(self):
+        self.fridge.slots.filter(slot_number__in=[5, 6]).delete()
+
+        call_command('create_fridge_slots')
+
+        self.assertEqual(self.fridge.slots.count(), 6)
+        self.assertEqual(
+            list(self.fridge.slots.order_by('slot_number').values_list('slot_number', flat=True)),
+            [1, 2, 3, 4, 5, 6],
+        )
+
+        call_command('create_fridge_slots')
+        self.assertEqual(self.fridge.slots.count(), 6)
+
+    def test_duplicate_slot_number_for_same_fridge_is_rejected(self):
+        duplicate = FridgeSlot(
+            fridge=self.fridge,
+            product=self.product,
+            slot_number=1,
+            current_stock=1,
+            max_capacity=10,
+            low_stock_threshold=2,
+        )
+        with self.assertRaises(ValidationError):
+            duplicate.full_clean()
+        with self.assertRaises(IntegrityError):
+            FridgeSlot.objects.create(
+                fridge=self.fridge,
+                product=self.product,
+                slot_number=1,
+                current_stock=1,
+                max_capacity=10,
+                low_stock_threshold=2,
+            )
+
+    def test_current_stock_cannot_exceed_max_capacity(self):
+        self.slot.current_stock = 11
+        with self.assertRaises(ValidationError):
+            self.slot.full_clean()
+
+    def test_low_stock_threshold_cannot_exceed_max_capacity(self):
+        self.slot.low_stock_threshold = 11
+        with self.assertRaises(ValidationError):
+            self.slot.full_clean()
+
     def test_stock_list_loads(self):
         response = self.client.get(reverse('stock_list'))
         self.assertEqual(response.status_code, 200)
@@ -250,17 +321,21 @@ class FridgeSlotTests(BaseFixture):
         response = self.client.post(
             reverse('edit_fridge_slot', args=[self.slot.id]),
             {'fridge': self.fridge.id, 'product': product2.id,
-             'slot_number': 1, 'motor_pin': 18, 'ir_sensor_pin': 19},
+             'slot_number': 1, 'current_stock': 10,
+             'max_capacity': 10, 'low_stock_threshold': 5,
+             'motor_pin': 18, 'ir_sensor_pin': 19},
         )
         self.assertEqual(response.status_code, 302)
         self.slot.refresh_from_db()
         self.assertEqual(self.slot.product.name, 'Yoghurt')
 
     def test_delete_fridge_slot(self):
-        slot2 = FridgeSlot.objects.create(
-            fridge=self.fridge, product=self.product,
-            slot_number=2, current_stock=5, motor_pin=20, ir_sensor_pin=21,
-        )
+        slot2 = self.fridge.slots.get(slot_number=2)
+        slot2.product = self.product
+        slot2.current_stock = 5
+        slot2.motor_pin = 20
+        slot2.ir_sensor_pin = 21
+        slot2.save(update_fields=['product', 'current_stock', 'motor_pin', 'ir_sensor_pin'])
         response = self.client.post(
             reverse('delete_fridge_slot', args=[slot2.id]))
         self.assertEqual(response.status_code, 302)
@@ -657,7 +732,7 @@ class SensorEndpointTests(BaseFixture):
             'voltage': 5.0, 'door_open': False,
             'stock': [{'slot_number': 999, 'stock_level': 3}],
         })
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 400)
         self.fridge.refresh_from_db()
         self.assertEqual(self.fridge.temperature, 4.0)
         self.assertEqual(SensorReading.objects.count(), 0)

@@ -478,10 +478,14 @@ def delete_product(request, id):
 @login_required
 def add_fridge_slot(request):
     form = FridgeSlotForm(request.POST or None)
+    if not request.POST:
+        fridge_id = request.GET.get('fridge')
+        if fridge_id:
+            form.initial['fridge'] = fridge_id
     if form.is_valid():
-        form.save()
+        slot = form.save()
         messages.success(request, 'Fridge slot added successfully.')
-        return redirect('stock_list')
+        return redirect('fridge_detail', id=slot.fridge_id)
     return render(request, 'dairysync/form.html', {'form': form, 'title': 'Add Fridge Slot'})
 
 
@@ -490,9 +494,9 @@ def edit_fridge_slot(request, id):
     slot = get_object_or_404(FridgeSlot, id=id)
     form = FridgeSlotForm(request.POST or None, instance=slot)
     if form.is_valid():
-        form.save()
+        slot = form.save()
         messages.success(request, 'Fridge slot updated successfully.')
-        return redirect('stock_list')
+        return redirect('fridge_detail', id=slot.fridge_id)
     return render(request, 'dairysync/form.html', {'form': form, 'title': 'Edit Fridge Slot'})
 
 
@@ -567,24 +571,39 @@ def void_transaction(request, id):
 @login_required
 def fridge_detail(request, id):
     mark_stale_fridges_offline()
-    fridge = get_object_or_404(Fridge.objects.select_related('institution'), id=id)
-    slots = FridgeSlot.objects.filter(fridge=fridge).select_related('product')
-    recent_readings = (
+
+    fridge = get_object_or_404(
+        Fridge.objects.select_related(
+            "institution"
+        ).prefetch_related(
+            "slots__product"
+        ),
+        id=id,
+    )
+
+    recent_readings = list(
         SensorReading.objects
         .filter(fridge=fridge)
-        .order_by('-recorded_at')[:20]
+        .order_by("-recorded_at")[:20]
     )
-    active_fridge_alerts = (
+    recent_readings.reverse()
+
+    alerts = (
         Alert.objects
         .filter(fridge=fridge, resolved=False)
-        .order_by('-created_at')
+        .order_by("-created_at")
     )
-    return render(request, 'dairysync/fridge_detail.html', {
-        'fridge':          fridge,
-        'slots':           slots,
-        'recent_readings': list(reversed(list(recent_readings))),
-        'alerts':          active_fridge_alerts,
-    })
+
+    return render(
+        request,
+        "dairysync/fridge_detail.html",
+        {
+            "fridge": fridge,
+            "slots": fridge.slots.all(),
+            "recent_readings": recent_readings,
+            "alerts": alerts,
+        },
+    )
 
 
 # ============================================================
@@ -776,13 +795,16 @@ def ai_stock_prediction(request):
     )
 
     for slot in slots:
+        if not slot.product:
+            continue
+
         readings = slot.ordered_readings
 
         base = {
             'fridge':        slot.fridge.fridge_code,
             'product':       slot.product.name,
             'current_stock': slot.current_stock,
-            'minimum_stock': slot.product.minimum_stock,
+            'minimum_stock': slot.low_stock_threshold,
             'reading_count': len(readings),
         }
 
@@ -816,7 +838,7 @@ def ai_stock_prediction(request):
 
         hours_now     = (timezone.now() - t0).total_seconds() / 3600
         predicted_now = float(model.predict([[hours_now]])[0])
-        min_stock     = slot.product.minimum_stock
+        min_stock     = slot.low_stock_threshold
 
         if slope_per_hour >= 0:
             trend  = 'increasing' if slope_per_hour > 0.01 else 'stable'
@@ -939,6 +961,22 @@ def receive_sensor_data(request):
         voltage     = float(data.get('voltage'))
         door_open   = convert_to_boolean(data.get('door_open'))
         stock_data  = data.get('stock', [])
+        normalized_stock_data = []
+
+        for item in stock_data:
+            slot_number = int(item.get('slot_number'))
+            stock_level = int(item.get('stock_level'))
+
+            if not (1 <= slot_number <= 6):
+                return JsonResponse(
+                    {'status': 'error', 'message': 'slot_number must be between 1 and 6'},
+                    status=400,
+                )
+
+            normalized_stock_data.append({
+                'slot_number': slot_number,
+                'stock_level': stock_level,
+            })
 
         with transaction.atomic():
             fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
@@ -988,10 +1026,9 @@ def receive_sensor_data(request):
                     message=f'Low voltage detected in {fridge.fridge_code}: {voltage}V',
                 )
 
-            for item in stock_data:
-                slot_number = item.get('slot_number')
-                stock_level = int(item.get('stock_level'))
-
+            for item in normalized_stock_data:
+                slot_number = item['slot_number']
+                stock_level = item['stock_level']
                 slot = FridgeSlot.objects.select_for_update().get(
                     fridge=fridge,
                     slot_number=slot_number,
@@ -1001,7 +1038,7 @@ def receive_sensor_data(request):
 
                 StockReading.objects.create(fridge_slot=slot, stock_level=stock_level)
 
-                if stock_level <= slot.product.minimum_stock:
+                if slot.product and stock_level <= slot.low_stock_threshold:
                     create_alert_and_notify(
                         fridge=fridge,
                         alert_type='low_stock',
@@ -1068,6 +1105,12 @@ def dispense_product_api(request):
         quantity = int(data.get('quantity', 1))
         product_detected = convert_to_boolean(data.get('product_detected'))
 
+        if not (1 <= slot_number <= 6):
+            return JsonResponse(
+                {'status': 'error', 'message': 'slot_number must be between 1 and 6'},
+                status=400,
+            )
+
         if not fridge_code:
             return JsonResponse(
                 {'status': 'error', 'message': 'fridge_code is required'},
@@ -1086,12 +1129,16 @@ def dispense_product_api(request):
 
         with transaction.atomic():
             fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
-            slot = (
-                FridgeSlot.objects
-                .select_for_update()
-                .select_related('product')
-                .get(fridge=fridge, slot_number=slot_number)
+            slot = FridgeSlot.objects.select_for_update().get(
+                fridge=fridge,
+                slot_number=slot_number,
             )
+
+            if not slot.product:
+                return JsonResponse(
+                    {'status': 'error', 'message': 'No product assigned to this slot.'},
+                    status=400,
+                )
 
             if slot.current_stock < quantity:
                 return JsonResponse(
@@ -1110,7 +1157,7 @@ def dispense_product_api(request):
                 payment_method='manual',
             )
 
-            if slot.current_stock <= slot.product.minimum_stock:
+            if slot.current_stock <= slot.low_stock_threshold:
                 create_alert_and_notify(
                     fridge=fridge,
                     alert_type='low_stock',
@@ -1349,13 +1396,13 @@ def export_stock(request):
         )
     rows = [
         (s.fridge.fridge_code, s.fridge.institution.name,
-         s.product.name, s.slot_number,
-         s.current_stock, s.product.minimum_stock)
+         s.product.name if s.product else 'No product assigned', s.slot_number,
+         s.current_stock, s.low_stock_threshold)
         for s in qs
     ]
     return _csv_response(
         'stock.csv',
-        ['Fridge Code', 'Institution', 'Product', 'Slot', 'Current Stock', 'Minimum Stock'],
+        ['Fridge Code', 'Institution', 'Product', 'Slot', 'Current Stock', 'Low Stock Threshold'],
         rows,
     )
 

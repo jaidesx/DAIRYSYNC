@@ -44,7 +44,7 @@
                 <td><span class="code-tag">{{ fridge.fridge_code }}</span></td>
                 <td>{{ fridge.institution.name }}</td>
                 <td>
-                    {% if fridge.temperature > 8 %}
+                    {% if fridge.has_high_temperature %}
                         <span style="color:#b91c1c;font-weight:bold">{{ fridge.temperature }} °C ⚠</span>
                     {% else %}
                         {{ fridge.temperature }} °C

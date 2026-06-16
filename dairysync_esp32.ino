@@ -15,8 +15,8 @@
 // For a phone hotspot, use the computer's LAN IP in API URLs, not 127.0.0.1.
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-const char* API_URL = "http://192.168.5.36:8000/api/sensor-data/";
-const char* DISPENSE_API_URL = "http://192.168.5.36:8000/api/dispense/";
+const char* API_URL = "http://192.168.0.123:8000/api/sensor-data/";
+const char* DISPENSE_API_URL = "http://192.168.0.123:8000/api/dispense/";
 const char* API_KEY = "YOUR_ESP32_API_KEY";
 const char* FRIDGE_CODE = "F001";
 
