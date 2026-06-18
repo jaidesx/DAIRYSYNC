@@ -97,31 +97,71 @@ def _is_low_voltage(voltage):
 
 def require_api_key(view_func):
     """
-    Protects ESP32 sensor endpoints.
-    Accepts the key from the X-Api-Key header (preferred)
-    or from api_key in the JSON body (legacy ESP32 support).
+    Protect ESP32 endpoints with the X-Api-Key HTTP header.
+
+    The JSON-body api_key value is retained only for backward
+    compatibility with older ESP32 firmware.
     """
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
-        header_key = request.headers.get('X-Api-Key', '')
-        expected   = getattr(settings, 'ESP32_API_KEY', '')
+        expected_key = str(
+            getattr(settings, 'ESP32_API_KEY', '') or ''
+        ).strip()
 
-        body_key = ''
-        try:
-            body_key = json.loads(request.body).get('api_key', '')
-        except (json.JSONDecodeError, Exception):
-            pass
-
-        valid_header = bool(header_key) and hmac.compare_digest(header_key, expected)
-        valid_body = bool(body_key) and hmac.compare_digest(body_key, expected)
-
-        # Reject if expected key is blank (not configured) or keys don't match.
-        if not expected or not (valid_header or valid_body):
+        if not expected_key:
+            logger.error('ESP32_API_KEY is not configured in Django settings.')
             return JsonResponse(
-                {'status': 'error', 'message': 'Invalid or missing API key.'},
-                status=403
+                {
+                    'status': 'error',
+                    'message': 'Device authentication is not configured.',
+                },
+                status=503,
             )
+
+        supplied_header_key = str(
+            request.headers.get('X-Api-Key', '') or ''
+        ).strip()
+
+        supplied_body_key = ''
+        if request.body:
+            try:
+                body_data = json.loads(request.body.decode('utf-8'))
+                if isinstance(body_data, dict):
+                    supplied_body_key = str(
+                        body_data.get('api_key', '') or ''
+                    ).strip()
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+
+        header_is_valid = (
+            bool(supplied_header_key)
+            and hmac.compare_digest(supplied_header_key, expected_key)
+        )
+        body_is_valid = (
+            bool(supplied_body_key)
+            and hmac.compare_digest(supplied_body_key, expected_key)
+        )
+
+        if not supplied_header_key and not supplied_body_key:
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'Missing API key.',
+                },
+                status=401,
+            )
+
+        if not (header_is_valid or body_is_valid):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'Invalid API key.',
+                },
+                status=403,
+            )
+
         return view_func(request, *args, **kwargs)
+
     return wrapped
 
 
@@ -939,59 +979,205 @@ def create_alert_and_notify(fridge, alert_type, subject, message):
 
 @csrf_exempt
 @require_api_key
+@require_POST
 def receive_sensor_data(request):
-    if request.method != 'POST':
-        return JsonResponse(
-            {'status': 'error', 'message': 'Only POST method allowed'},
-            status=405
-        )
+    """
+    Receive periodic ESP32 fridge readings.
 
+    Expected JSON:
+    {
+        "fridge_code": "F001",
+        "temperature": 4.5,
+        "humidity": 60.0,
+        "voltage": 5.0,
+        "door_open": false,
+        "stock": [
+            {"slot_number": 1, "stock_level": 10}
+        ]
+    }
+    """
     try:
-        data = json.loads(request.body)
+        data = json.loads(request.body.decode('utf-8'))
 
-        fridge_code = data.get('fridge_code')
-        if not fridge_code:
+        if not isinstance(data, dict):
             return JsonResponse(
-                {'status': 'error', 'message': 'fridge_code is required'},
-                status=400
+                {
+                    'status': 'error',
+                    'message': 'JSON body must be an object.',
+                },
+                status=400,
             )
 
-        temperature = float(data.get('temperature'))
-        humidity    = float(data.get('humidity'))
-        voltage     = float(data.get('voltage'))
-        door_open   = convert_to_boolean(data.get('door_open'))
-        stock_data  = data.get('stock', [])
+        required_fields = (
+            'fridge_code',
+            'temperature',
+            'humidity',
+            'voltage',
+            'door_open',
+        )
+        missing_fields = [
+            field for field in required_fields
+            if field not in data
+        ]
+
+        if missing_fields:
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': (
+                        'Missing required fields: '
+                        + ', '.join(missing_fields)
+                    ),
+                },
+                status=400,
+            )
+
+        fridge_code = str(data.get('fridge_code', '')).strip()
+        if not fridge_code:
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'fridge_code is required.',
+                },
+                status=400,
+            )
+
+        temperature = float(data['temperature'])
+        humidity = float(data['humidity'])
+        voltage = float(data['voltage'])
+        door_open = convert_to_boolean(data['door_open'])
+
+        if not (-50 <= temperature <= 100):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'temperature is outside the accepted range.',
+                },
+                status=400,
+            )
+
+        if not (0 <= humidity <= 100):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'humidity must be between 0 and 100.',
+                },
+                status=400,
+            )
+
+        if not (0 <= voltage <= 30):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'voltage is outside the accepted range.',
+                },
+                status=400,
+            )
+
+        stock_data = data.get('stock', [])
+        if stock_data is None:
+            stock_data = []
+
+        if not isinstance(stock_data, list):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'stock must be a list.',
+                },
+                status=400,
+            )
+
         normalized_stock_data = []
+        seen_slots = set()
 
         for item in stock_data:
-            slot_number = int(item.get('slot_number'))
-            stock_level = int(item.get('stock_level'))
-
-            if not (1 <= slot_number <= 6):
+            if not isinstance(item, dict):
                 return JsonResponse(
-                    {'status': 'error', 'message': 'slot_number must be between 1 and 6'},
+                    {
+                        'status': 'error',
+                        'message': 'Each stock item must be an object.',
+                    },
                     status=400,
                 )
 
-            normalized_stock_data.append({
-                'slot_number': slot_number,
-                'stock_level': stock_level,
-            })
+            if 'slot_number' not in item or 'stock_level' not in item:
+                return JsonResponse(
+                    {
+                        'status': 'error',
+                        'message': (
+                            'Each stock item requires slot_number '
+                            'and stock_level.'
+                        ),
+                    },
+                    status=400,
+                )
+
+            slot_number = int(item['slot_number'])
+            stock_level = int(item['stock_level'])
+
+            if not (1 <= slot_number <= 6):
+                return JsonResponse(
+                    {
+                        'status': 'error',
+                        'message': 'slot_number must be between 1 and 6.',
+                    },
+                    status=400,
+                )
+
+            if stock_level < 0:
+                return JsonResponse(
+                    {
+                        'status': 'error',
+                        'message': 'stock_level cannot be negative.',
+                    },
+                    status=400,
+                )
+
+            if slot_number in seen_slots:
+                return JsonResponse(
+                    {
+                        'status': 'error',
+                        'message': (
+                            f'Duplicate stock entry for slot {slot_number}.'
+                        ),
+                    },
+                    status=400,
+                )
+
+            seen_slots.add(slot_number)
+            normalized_stock_data.append(
+                {
+                    'slot_number': slot_number,
+                    'stock_level': stock_level,
+                }
+            )
 
         with transaction.atomic():
-            fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
+            fridge = (
+                Fridge.objects
+                .select_for_update()
+                .get(fridge_code=fridge_code)
+            )
+
             now = timezone.now()
 
             fridge.temperature = temperature
-            fridge.humidity    = humidity
-            fridge.voltage     = voltage
-            fridge.door_open   = door_open
-            fridge.status      = 'online'
-            fridge.last_seen   = now
-            fridge.save(update_fields=[
-                'temperature', 'humidity', 'voltage', 'door_open',
-                'status', 'last_seen', 'last_updated',
-            ])
+            fridge.humidity = humidity
+            fridge.voltage = voltage
+            fridge.door_open = door_open
+            fridge.status = 'online'
+            fridge.last_seen = now
+            fridge.save(
+                update_fields=[
+                    'temperature',
+                    'humidity',
+                    'voltage',
+                    'door_open',
+                    'status',
+                    'last_seen',
+                    'last_updated',
+                ]
+            )
 
             SensorReading.objects.create(
                 fridge=fridge,
@@ -1001,13 +1187,16 @@ def receive_sensor_data(request):
                 door_open=door_open,
             )
 
-            # Temperature alert uses per-fridge configurable threshold
             if temperature > fridge.temp_threshold:
                 create_alert_and_notify(
                     fridge=fridge,
                     alert_type='high_temperature',
                     subject='DAIRYSYNC Temperature Alert',
-                    message=f'High temperature detected in {fridge.fridge_code}: {temperature} °C (threshold: {fridge.temp_threshold} °C)',
+                    message=(
+                        f'High temperature detected in {fridge.fridge_code}: '
+                        f'{temperature} °C '
+                        f'(threshold: {fridge.temp_threshold} °C)'
+                    ),
                 )
 
             if door_open:
@@ -1015,7 +1204,10 @@ def receive_sensor_data(request):
                     fridge=fridge,
                     alert_type='door_open',
                     subject='DAIRYSYNC Door Alert',
-                    message=f'Fridge door is open for {fridge.fridge_code}',
+                    message=(
+                        f'Fridge door is open for '
+                        f'{fridge.fridge_code}'
+                    ),
                 )
 
             if _is_low_voltage(voltage):
@@ -1023,138 +1215,280 @@ def receive_sensor_data(request):
                     fridge=fridge,
                     alert_type='power_fault',
                     subject='DAIRYSYNC Power Fault Alert',
-                    message=f'Low voltage detected in {fridge.fridge_code}: {voltage}V',
+                    message=(
+                        f'Low voltage detected in '
+                        f'{fridge.fridge_code}: {voltage}V'
+                    ),
                 )
 
             for item in normalized_stock_data:
-                slot_number = item['slot_number']
-                stock_level = item['stock_level']
-                slot = FridgeSlot.objects.select_for_update().get(
-                    fridge=fridge,
-                    slot_number=slot_number,
+                slot = (
+                    FridgeSlot.objects
+                    .select_for_update()
+                    .select_related('product')
+                    .get(
+                        fridge=fridge,
+                        slot_number=item['slot_number'],
+                    )
                 )
-                slot.current_stock = stock_level
+
+                slot.current_stock = item['stock_level']
                 slot.save(update_fields=['current_stock'])
 
-                StockReading.objects.create(fridge_slot=slot, stock_level=stock_level)
+                StockReading.objects.create(
+                    fridge_slot=slot,
+                    stock_level=slot.current_stock,
+                )
 
-                if slot.product and stock_level <= slot.low_stock_threshold:
+                if (
+                    slot.product
+                    and slot.current_stock <= slot.low_stock_threshold
+                ):
                     create_alert_and_notify(
                         fridge=fridge,
                         alert_type='low_stock',
                         subject='DAIRYSYNC Low Stock Alert',
                         message=(
                             f'Low stock for {slot.product.name} '
-                            f'in {fridge.fridge_code}. Remaining: {stock_level}'
+                            f'in {fridge.fridge_code}. '
+                            f'Remaining: {slot.current_stock}'
                         ),
                     )
 
-                    already_pending = RestockOrder.objects.filter(
+                    RestockOrder.objects.get_or_create(
                         fridge=fridge,
                         product=slot.product,
                         status='pending',
-                    ).exists()
+                        defaults={
+                            'quantity_needed':
+                                slot.product.restock_quantity,
+                        },
+                    )
 
-                    if not already_pending:
-                        RestockOrder.objects.create(
-                            fridge=fridge,
-                            product=slot.product,
-                            # Use the product's configured restock quantity
-                            quantity_needed=slot.product.restock_quantity,
-                            status='pending',
-                        )
+        return JsonResponse(
+            {
+                'status': 'success',
+                'message': 'Sensor data received successfully.',
+                'fridge_code': fridge_code,
+            },
+            status=201,
+        )
 
-        return JsonResponse({
-            'status': 'success',
-            'message': 'Sensor data received successfully',
-        })
-
-    except Fridge.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Fridge not found'}, status=404)
-
-    except FridgeSlot.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Fridge slot not found'}, status=404)
-
-    except ValueError:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Invalid number format in temperature, humidity, voltage, or stock level',
-        }, status=400)
+    except UnicodeDecodeError:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Request body must use UTF-8 encoding.',
+            },
+            status=400,
+        )
 
     except json.JSONDecodeError:
-        return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'}, status=400)
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Invalid JSON data.',
+            },
+            status=400,
+        )
 
-    except Exception as e:
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': (
+                    'Invalid number format in temperature, humidity, '
+                    'voltage, slot_number, or stock_level.'
+                ),
+            },
+            status=400,
+        )
+
+    except Fridge.DoesNotExist:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Fridge not found.',
+            },
+            status=404,
+        )
+
+    except FridgeSlot.DoesNotExist:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Fridge slot not found.',
+            },
+            status=404,
+        )
+
+    except Exception:
         logger.exception('Unexpected error in receive_sensor_data')
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Unable to process sensor data.',
+            },
+            status=500,
+        )
 
 
 @csrf_exempt
 @require_api_key
+@require_POST
 def dispense_product_api(request):
-    if request.method != 'POST':
-        return JsonResponse(
-            {'status': 'error', 'message': 'Only POST method allowed'},
-            status=405,
-        )
+    """
+    Confirm a physical dispense and deduct stock exactly once
+    for the received request.
 
+    Expected JSON:
+    {
+        "fridge_code": "F001",
+        "slot_number": 1,
+        "quantity": 1,
+        "product_detected": true
+    }
+    """
     try:
-        data = json.loads(request.body)
-        fridge_code = data.get('fridge_code')
-        slot_number = int(data.get('slot_number'))
+        data = json.loads(request.body.decode('utf-8'))
+
+        if not isinstance(data, dict):
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'JSON body must be an object.',
+                },
+                status=400,
+            )
+
+        required_fields = (
+            'fridge_code',
+            'slot_number',
+            'product_detected',
+        )
+        missing_fields = [
+            field for field in required_fields
+            if field not in data
+        ]
+
+        if missing_fields:
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': (
+                        'Missing required fields: '
+                        + ', '.join(missing_fields)
+                    ),
+                },
+                status=400,
+            )
+
+        fridge_code = str(data.get('fridge_code', '')).strip()
+        if not fridge_code:
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': 'fridge_code is required.',
+                },
+                status=400,
+            )
+
+        slot_number = int(data['slot_number'])
         quantity = int(data.get('quantity', 1))
-        product_detected = convert_to_boolean(data.get('product_detected'))
+        product_detected = convert_to_boolean(
+            data['product_detected']
+        )
 
         if not (1 <= slot_number <= 6):
             return JsonResponse(
-                {'status': 'error', 'message': 'slot_number must be between 1 and 6'},
+                {
+                    'status': 'error',
+                    'message': 'slot_number must be between 1 and 6.',
+                },
                 status=400,
             )
 
-        if not fridge_code:
-            return JsonResponse(
-                {'status': 'error', 'message': 'fridge_code is required'},
-                status=400,
-            )
         if quantity < 1:
             return JsonResponse(
-                {'status': 'error', 'message': 'quantity must be at least 1'},
+                {
+                    'status': 'error',
+                    'message': 'quantity must be at least 1.',
+                },
                 status=400,
             )
+
         if not product_detected:
-            return JsonResponse({
-                'status': 'ignored',
-                'message': 'Stock was not reduced because product detection was not confirmed.',
-            })
+            return JsonResponse(
+                {
+                    'status': 'ignored',
+                    'message': (
+                        'Stock was not reduced because product '
+                        'detection was not confirmed.'
+                    ),
+                },
+                status=200,
+            )
 
         with transaction.atomic():
-            fridge = Fridge.objects.select_for_update().get(fridge_code=fridge_code)
-            slot = FridgeSlot.objects.select_for_update().get(
-                fridge=fridge,
-                slot_number=slot_number,
+            fridge = (
+                Fridge.objects
+                .select_for_update()
+                .get(fridge_code=fridge_code)
+            )
+
+            slot = (
+                FridgeSlot.objects
+                .select_for_update()
+                .select_related('product')
+                .get(
+                    fridge=fridge,
+                    slot_number=slot_number,
+                )
             )
 
             if not slot.product:
                 return JsonResponse(
-                    {'status': 'error', 'message': 'No product assigned to this slot.'},
+                    {
+                        'status': 'error',
+                        'message': 'No product is assigned to this slot.',
+                    },
                     status=400,
                 )
 
             if slot.current_stock < quantity:
                 return JsonResponse(
-                    {'status': 'error', 'message': 'Insufficient stock for dispense.'},
+                    {
+                        'status': 'error',
+                        'message': 'Insufficient stock for dispense.',
+                        'current_stock': slot.current_stock,
+                    },
                     status=409,
                 )
 
             slot.current_stock -= quantity
             slot.save(update_fields=['current_stock'])
-            StockReading.objects.create(fridge_slot=slot, stock_level=slot.current_stock)
-            Transaction.objects.create(
+
+            StockReading.objects.create(
+                fridge_slot=slot,
+                stock_level=slot.current_stock,
+            )
+
+            transaction_record = Transaction.objects.create(
                 product=slot.product,
                 fridge=fridge,
                 quantity=quantity,
-                amount=Decimal(slot.product.price) * quantity,
+                amount=Decimal(str(slot.product.price)) * quantity,
                 payment_method='manual',
+            )
+
+            fridge.status = 'online'
+            fridge.last_seen = timezone.now()
+            fridge.save(
+                update_fields=[
+                    'status',
+                    'last_seen',
+                    'last_updated',
+                ]
             )
 
             if slot.current_stock <= slot.low_stock_threshold:
@@ -1164,37 +1498,88 @@ def dispense_product_api(request):
                     subject='DAIRYSYNC Low Stock Alert',
                     message=(
                         f'Low stock for {slot.product.name} '
-                        f'in {fridge.fridge_code}. Remaining: {slot.current_stock}'
+                        f'in {fridge.fridge_code}. '
+                        f'Remaining: {slot.current_stock}'
                     ),
                 )
+
                 RestockOrder.objects.get_or_create(
                     fridge=fridge,
                     product=slot.product,
                     status='pending',
-                    defaults={'quantity_needed': slot.product.restock_quantity},
+                    defaults={
+                        'quantity_needed':
+                            slot.product.restock_quantity,
+                    },
                 )
 
-        return JsonResponse({
-            'status': 'success',
-            'message': 'Dispense confirmed and stock deducted.',
-            'slot_number': slot_number,
-            'current_stock': slot.current_stock,
-        })
-
-    except Fridge.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Fridge not found'}, status=404)
-    except FridgeSlot.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Fridge slot not found'}, status=404)
-    except (TypeError, ValueError):
         return JsonResponse(
-            {'status': 'error', 'message': 'Invalid slot_number or quantity'},
+            {
+                'status': 'success',
+                'message': 'Dispense confirmed and stock deducted.',
+                'fridge_code': fridge_code,
+                'slot_number': slot_number,
+                'quantity': quantity,
+                'current_stock': slot.current_stock,
+                'transaction_id': transaction_record.pk,
+            },
+            status=201,
+        )
+
+    except UnicodeDecodeError:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Request body must use UTF-8 encoding.',
+            },
             status=400,
         )
+
     except json.JSONDecodeError:
-        return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'}, status=400)
-    except Exception as e:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Invalid JSON data.',
+            },
+            status=400,
+        )
+
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Invalid slot_number or quantity.',
+            },
+            status=400,
+        )
+
+    except Fridge.DoesNotExist:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Fridge not found.',
+            },
+            status=404,
+        )
+
+    except FridgeSlot.DoesNotExist:
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Fridge slot not found.',
+            },
+            status=404,
+        )
+
+    except Exception:
         logger.exception('Unexpected error in dispense_product_api')
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Unable to process the dispense request.',
+            },
+            status=500,
+        )
 
 
 # ============================================================
