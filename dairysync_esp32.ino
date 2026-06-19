@@ -18,12 +18,12 @@ const char* WIFI_PASSWORD = "@jamie.?1F.048#";
 
 // Use your computer/server LAN IP, not 127.0.0.1.
 const char* SENSOR_API_URL =
-  "http://192.168.136.21:8000/api/sensor-data/";
+  "http://192.168.210.21:8000/api/sensor-data/";
 
 const char* DISPENSE_API_URL =
-  "http://192.168.136.21:8000/api/dispense/";
+  "http://192.168.210.21:8000/api/dispense/";
 
-const char* ESP32_API_KEY = "1xT98P_Wfrf4BgLnkXlR9Ln-71oat_bLDtYj-piieP4";
+const char* ESP32_API_KEY = "YOUR_NEW_ESP32_API_KEY";
 const char* FRIDGE_CODE = "F001";
 
 const float SUPPLY_VOLTAGE = 5.0;
@@ -32,10 +32,17 @@ const unsigned long SENSOR_UPLOAD_INTERVAL = 30000UL;
 const unsigned long WIFI_RETRY_INTERVAL = 10000UL;
 const unsigned long API_RETRY_INTERVAL = 15000UL;
 
+// Set true while debugging WiFi. Set false after WiFi is stable.
+const bool SCAN_WIFI_ON_BOOT = true;
+
 unsigned long lastWiFiAttempt = 0;
 unsigned long lastApiAttempt = 0;
 
 bool djangoOnline = false;
+
+bool wifiAttemptInProgress = false;
+unsigned long wifiAttemptStartedAt = 0;
+const unsigned long WIFI_CONNECT_TIMEOUT = 30000UL;
 
 // Store one failed dispense update for automatic retry.
 int pendingDispenseSlot = 0;
@@ -78,7 +85,7 @@ float currentTemperature = NAN;
 float currentHumidity = NAN;
 
 unsigned long lastTemperatureRead = 0;
-const unsigned long TEMPERATURE_READ_INTERVAL = 2000UL;
+const unsigned long TEMPERATURE_READ_INTERVAL = 2500UL;
 
 const bool ENABLE_HIGH_TEMPERATURE_PROTECTION = true;
 const float MAX_ALLOWED_TEMPERATURE = 45.0f;
@@ -224,12 +231,72 @@ String jsonEscape(const String &value) {
   return escaped;
 }
 
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) {
+
+void scanWiFiNetworks() {
+  Serial.println();
+  Serial.println("Scanning WiFi networks...");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false, false);
+  delay(500);
+
+  int networkCount = WiFi.scanNetworks();
+
+  if (networkCount <= 0) {
+    Serial.println("No WiFi networks found.");
+    return;
+  }
+
+  for (int i = 0; i < networkCount; i++) {
+    Serial.print(i + 1);
+    Serial.print(". ");
+    Serial.print(WiFi.SSID(i));
+    Serial.print(" | Signal: ");
+    Serial.print(WiFi.RSSI(i));
+    Serial.print(" dBm | Channel: ");
+    Serial.print(WiFi.channel(i));
+    Serial.print(" | Encryption: ");
+    Serial.println(WiFi.encryptionType(i));
+  }
+
+  WiFi.scanDelete();
+}
+
+const char* wifiStatusText(wl_status_t status) {
+  switch (status) {
+    case WL_IDLE_STATUS:
+      return "Idle";
+    case WL_NO_SSID_AVAIL:
+      return "SSID not found";
+    case WL_SCAN_COMPLETED:
+      return "Scan completed";
+    case WL_CONNECTED:
+      return "Connected";
+    case WL_CONNECT_FAILED:
+      return "Connection failed";
+    case WL_CONNECTION_LOST:
+      return "Connection lost";
+    case WL_DISCONNECTED:
+      return "Disconnected";
+    default:
+      return "Unknown";
+  }
+}
+
+void startWiFiAttempt(bool forceAttempt = false) {
+  wl_status_t currentStatus = WiFi.status();
+
+  if (currentStatus == WL_CONNECTED) {
+    wifiAttemptInProgress = false;
+    return;
+  }
+
+  if (wifiAttemptInProgress) {
     return;
   }
 
   if (
+    !forceAttempt &&
     lastWiFiAttempt != 0 &&
     millis() - lastWiFiAttempt < WIFI_RETRY_INTERVAL
   ) {
@@ -237,15 +304,105 @@ void connectWiFi() {
   }
 
   lastWiFiAttempt = millis();
+  wifiAttemptStartedAt = millis();
+  wifiAttemptInProgress = true;
   djangoOnline = false;
 
+  Serial.println();
   Serial.print("Connecting to WiFi: ");
   Serial.println(WIFI_SSID);
 
   WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
+  WiFi.setSleep(false);
+
+  // Stop any previous unfinished connection attempt before setting new config.
+  WiFi.disconnect(true, true);
+  delay(1200);
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+void serviceWiFiConnection() {
+  wl_status_t status = WiFi.status();
+
+  if (status == WL_CONNECTED) {
+    if (wifiAttemptInProgress) {
+      wifiAttemptInProgress = false;
+
+      Serial.println();
+      Serial.println("WiFi connected successfully.");
+
+      Serial.print("ESP32 IP: ");
+      Serial.println(WiFi.localIP());
+
+      Serial.print("Gateway: ");
+      Serial.println(WiFi.gatewayIP());
+
+      Serial.print("Signal strength: ");
+      Serial.print(WiFi.RSSI());
+      Serial.println(" dBm");
+
+      // Force the first API upload immediately.
+      lastApiAttempt = 0;
+    }
+
+    return;
+  }
+
+  if (!wifiAttemptInProgress) {
+    startWiFiAttempt(false);
+    return;
+  }
+
+  if (millis() - wifiAttemptStartedAt < WIFI_CONNECT_TIMEOUT) {
+    static unsigned long lastDotAt = 0;
+
+    if (millis() - lastDotAt >= 500UL) {
+      lastDotAt = millis();
+      Serial.print(".");
+    }
+
+    return;
+  }
+
+  wifiAttemptInProgress = false;
+  lastWiFiAttempt = millis();  // Start retry interval from the timeout moment.
+
+  Serial.println();
+  Serial.println("WiFi connection attempt timed out.");
+
+  Serial.print("WiFi status: ");
+  Serial.print(static_cast<int>(status));
+  Serial.print(" (");
+  Serial.print(wifiStatusText(status));
+  Serial.println(")");
+
+  // Fully stop the failed STA attempt before the next retry.
+  // This prevents: wifi:sta is connecting, cannot set config
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(true, true);
+  delay(1200);
+  WiFi.setAutoReconnect(true);
+
+  Serial.println(
+    "WiFi driver reset. Will retry after retry interval. Check password, WPA2 2.4 GHz, signal, and hotspot device limit."
+  );
+}
+
+bool waitForInitialWiFiConnection() {
+  startWiFiAttempt(true);
+
+  while (
+    wifiAttemptInProgress &&
+    WiFi.status() != WL_CONNECTED
+  ) {
+    serviceWiFiConnection();
+    delay(20);
+  }
+
+  return WiFi.status() == WL_CONNECTED;
 }
 
 bool beginHttpClient(
@@ -388,7 +545,7 @@ void retryPendingDispenseUpdate() {
 }
 
 void maintainCloudConnection() {
-  connectWiFi();
+  serviceWiFiConnection();
 
   if (WiFi.status() != WL_CONNECTED) {
     djangoOnline = false;
@@ -400,7 +557,10 @@ void maintainCloudConnection() {
   unsigned long interval =
     djangoOnline ? SENSOR_UPLOAD_INTERVAL : API_RETRY_INTERVAL;
 
-  if (millis() - lastApiAttempt < interval) {
+  if (
+    lastApiAttempt != 0 &&
+    millis() - lastApiAttempt < interval
+  ) {
     return;
   }
 
@@ -663,25 +823,35 @@ bool normalProductDetection(float distance) {
 // ======================================================
 
 bool readTemperatureNow() {
-  float humidity = dht.readHumidity();
-  float temperature = dht.readTemperature();
+  const int maxAttempts = 3;
 
-  if (isnan(humidity) || isnan(temperature)) {
-    Serial.println("DHT11 reading failed.");
-    return false;
+  for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+    float humidity = dht.readHumidity();
+    float temperature = dht.readTemperature();
+
+    if (!isnan(humidity) && !isnan(temperature)) {
+      currentHumidity = humidity;
+      currentTemperature = temperature;
+      lastTemperatureRead = millis();
+
+      Serial.print("Temperature: ");
+      Serial.print(currentTemperature, 1);
+      Serial.print(" C, Humidity: ");
+      Serial.print(currentHumidity, 1);
+      Serial.println(" %");
+
+      return true;
+    }
+
+    if (attempt < maxAttempts) {
+      delay(250);
+    }
   }
 
-  currentHumidity = humidity;
-  currentTemperature = temperature;
+  // Preserve the last valid reading instead of replacing it with NAN.
   lastTemperatureRead = millis();
-
-  Serial.print("Temperature: ");
-  Serial.print(currentTemperature, 1);
-  Serial.print(" C, Humidity: ");
-  Serial.print(currentHumidity, 1);
-  Serial.println(" %");
-
-  return true;
+  Serial.println("DHT11 reading failed after 3 attempts; keeping last valid reading.");
+  return false;
 }
 
 void updateTemperature() {
@@ -1133,6 +1303,8 @@ void setup() {
   Serial.println("==============================");
   Serial.println("DAIRYSYNC ESP32-S3 VENDING");
   Serial.println("==============================");
+  Serial.println("WiFi requires a 2.4 GHz WPA2 network.");
+  Serial.println("Use a simple hotspot password while testing.");
 
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
@@ -1221,12 +1393,33 @@ void setup() {
     digitalWrite(RED_LED, LOW);
   }
 
-  WiFi.setSleep(false);
-  connectWiFi();
-
-  // Allow DHT11 to stabilize.
+  // Allow DHT11 to stabilize before the first cloud upload.
   delay(2000);
   readTemperatureNow();
+
+  if (SCAN_WIFI_ON_BOOT) {
+    scanWiFiNetworks();
+  }
+
+  // Make one blocking WiFi attempt during startup so the result is visible.
+  bool wifiConnected = waitForInitialWiFiConnection();
+
+  if (wifiConnected) {
+    Serial.println("Testing Django sensor API...");
+    djangoOnline = sendSensorDataToDjango();
+
+    if (djangoOnline) {
+      Serial.println("Initial Django upload succeeded.");
+    } else {
+      Serial.println(
+        "Initial Django upload failed; automatic retry remains enabled."
+      );
+    }
+  } else {
+    Serial.println(
+      "Starting local vending mode; WiFi will retry automatically."
+    );
+  }
 
   float testDistance = readDistanceFastCm();
 
